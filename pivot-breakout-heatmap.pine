@@ -1,0 +1,407 @@
+//@version=6
+// =====================================================================
+//  Currency Strength + Pivot Breakout Heatmap  (Pine Script v6)
+//  Paired indicator for TradingView:
+//    PANEL A — Currency-strength meter (MQLTA-style ROC across 28 pairs)
+//    PANEL B — "Significant move" heatmap from pivot close-breakouts
+//    COUPLING — strength bias tints pivot levels (confirmed / break-risk)
+//
+//  SOURCE ANCHORS (internal-os knowledge/):
+//   - Strength math: knowledge/raw/traderswaylegacy-review.md,
+//     proposal-currency-strength-index-skill.md  (MQLTA MT4 Currency
+//     Strength Lines.mq4 = per-currency ROC/RSI across all 28 majors).
+//   - Pivot ladder + M0–M5 midpoints: skills/pivot-points/SKILL.md,
+//     raw/2026-08-26-metatraders4-archive-catalog.md §6 (WyattsPivots v2.1).
+//   - "Significant" = CLOSE-based breakout (not size): skills/price-action/
+//     SKILL.md step 3 + skills/price-levels/SKILL.md.  Wick-through that
+//     closes back inside = rejection, not a break.
+//   - COUPLING design: a pivot level "confirmed" by currency strength when
+//     its role agrees with base-vs-quote momentum (per strength meter).
+//   - NO ATR/percentage threshold exists in the corpus — magnitudes below
+//     are absolute-pip sizing cues (TradeOurs 15/20/40p) flagged as such.
+// =====================================================================
+
+indicator("Currency Strength + Pivot Breakout Heatmap", overlay = true, max_bars_back = 600, max_lines_count = 500)
+
+// ------------------------- INPUTS -----------------------------------
+rocLen         = input.int(14, "Strength ROC length", minval = 1)
+strengthSmooth = input.int(5, "Strength smoothing (EMA periods)", minval = 1)
+scaleFactor    = input.float(12.0, "Strength scale (ROC → 0..100)", minval = 1.0, step = 0.5)
+showPivots     = input.bool(true, "Draw daily pivots on chart")
+confPips       = input.float(0.0, "Confluence band (0 = ATR×0.5)", minval = 0.0)
+useCoupling    = input.bool(true, "Strength→pivot bias coupling")
+biasThr        = input.int(10, "Bias confirm threshold (0..50)", minval = 0, maxval = 50)
+chartPivotTF   = input.string("D", "On-chart pivot TF", options = ["D", "W", "M"])
+
+// ===================== PART A — STRENGTH METER ======================
+// 8 currencies, 28 pairs. Base += ROC, quote -= ROC, averaged, normalized.
+ccy = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
+acc = array.new_float(8, 0.0)
+cnt = array.new_int(8, 0)
+
+f_add(b, q, r) =>
+    bi = array.indexof(ccy, b)
+    qi = array.indexof(ccy, q)
+    array.set(acc, bi, array.get(acc, bi) + r)
+    array.set(cnt, bi, array.get(cnt, bi) + 1)
+    array.set(acc, qi, array.get(acc, qi) - r)
+    array.set(cnt, qi, array.get(cnt, qi) + 1)
+
+// 28 pairs → daily ROC (one security call each)
+rocEURUSD = request.security("EURUSD", "D", ta.roc(close, rocLen))
+rocEURGBP = request.security("EURGBP", "D", ta.roc(close, rocLen))
+rocEURJPY = request.security("EURJPY", "D", ta.roc(close, rocLen))
+rocEURAUD = request.security("EURAUD", "D", ta.roc(close, rocLen))
+rocEURNZD = request.security("EURNZD", "D", ta.roc(close, rocLen))
+rocEURCAD = request.security("EURCAD", "D", ta.roc(close, rocLen))
+rocEURCHF = request.security("EURCHF", "D", ta.roc(close, rocLen))
+rocGBPUSD = request.security("GBPUSD", "D", ta.roc(close, rocLen))
+rocGBPJPY = request.security("GBPJPY", "D", ta.roc(close, rocLen))
+rocGBPAUD = request.security("GBPAUD", "D", ta.roc(close, rocLen))
+rocGBPNZD = request.security("GBPNZD", "D", ta.roc(close, rocLen))
+rocGBPCAD = request.security("GBPCAD", "D", ta.roc(close, rocLen))
+rocGBPCHF = request.security("GBPCHF", "D", ta.roc(close, rocLen))
+rocUSDJPY = request.security("USDJPY", "D", ta.roc(close, rocLen))
+rocUSDCHF = request.security("USDCHF", "D", ta.roc(close, rocLen))
+rocUSDCAD = request.security("USDCAD", "D", ta.roc(close, rocLen))
+rocAUDUSD = request.security("AUDUSD", "D", ta.roc(close, rocLen))
+rocAUDJPY = request.security("AUDJPY", "D", ta.roc(close, rocLen))
+rocAUDCAD = request.security("AUDCAD", "D", ta.roc(close, rocLen))
+rocAUDCHF = request.security("AUDCHF", "D", ta.roc(close, rocLen))
+rocAUDNZD = request.security("AUDNZD", "D", ta.roc(close, rocLen))
+rocNZDUSD = request.security("NZDUSD", "D", ta.roc(close, rocLen))
+rocNZDJPY = request.security("NZDJPY", "D", ta.roc(close, rocLen))
+rocNZDCAD = request.security("NZDCAD", "D", ta.roc(close, rocLen))
+rocNZDCHF = request.security("NZDCHF", "D", ta.roc(close, rocLen))
+rocCADJPY = request.security("CADJPY", "D", ta.roc(close, rocLen))
+rocCADCHF = request.security("CADCHF", "D", ta.roc(close, rocLen))
+rocCHFJPY = request.security("CHFJPY", "D", ta.roc(close, rocLen))
+
+f_add("EUR", "USD", rocEURUSD)
+f_add("EUR", "GBP", rocEURGBP)
+f_add("EUR", "JPY", rocEURJPY)
+f_add("EUR", "AUD", rocEURAUD)
+f_add("EUR", "NZD", rocEURNZD)
+f_add("EUR", "CAD", rocEURCAD)
+f_add("EUR", "CHF", rocEURCHF)
+f_add("GBP", "USD", rocGBPUSD)
+f_add("GBP", "JPY", rocGBPJPY)
+f_add("GBP", "AUD", rocGBPAUD)
+f_add("GBP", "NZD", rocGBPNZD)
+f_add("GBP", "CAD", rocGBPCAD)
+f_add("GBP", "CHF", rocGBPCHF)
+f_add("USD", "JPY", rocUSDJPY)
+f_add("USD", "CHF", rocUSDCHF)
+f_add("USD", "CAD", rocUSDCAD)
+f_add("AUD", "USD", rocAUDUSD)
+f_add("AUD", "JPY", rocAUDJPY)
+f_add("AUD", "CAD", rocAUDCAD)
+f_add("AUD", "CHF", rocAUDCHF)
+f_add("AUD", "NZD", rocAUDNZD)
+f_add("NZD", "USD", rocNZDUSD)
+f_add("NZD", "JPY", rocNZDJPY)
+f_add("NZD", "CAD", rocNZDCAD)
+f_add("NZD", "CHF", rocNZDCHF)
+f_add("CAD", "JPY", rocCADJPY)
+f_add("CAD", "CHF", rocCADCHF)
+f_add("CHF", "JPY", rocCHFJPY)
+
+// normalize + EMA smooth → 0..100 meter
+var float[] sStr = array.new_float(8, 50.0)
+alpha = 2.0 / (strengthSmooth + 1)
+for c = 0 to 7
+    avgRoc = cnt.get(c) > 0 ? acc.get(c) / cnt.get(c) : 0.0
+    inst   = math.max(0.0, math.min(100.0, 50.0 + avgRoc * scaleFactor))
+    array.set(sStr, c, array.get(sStr, c) + alpha * (inst - array.get(sStr, c)))
+
+f_strOf(code) =>
+    idx = array.indexof(ccy, code)
+    idx >= 0 ? array.get(sStr, idx) : 50.0
+
+// ===================== PART B — PIVOT HEATMAP ======================
+// prior-period HLC for D / W / M of the chart symbol
+dH = request.security(syminfo.tickerid, "D", high[1])
+dL = request.security(syminfo.tickerid, "D", low[1])
+dC = request.security(syminfo.tickerid, "D", close[1])
+wH = request.security(syminfo.tickerid, "W", high[1])
+wL = request.security(syminfo.tickerid, "W", low[1])
+wC = request.security(syminfo.tickerid, "W", close[1])
+mH = request.security(syminfo.tickerid, "M", high[1])
+mL = request.security(syminfo.tickerid, "M", low[1])
+mC = request.security(syminfo.tickerid, "M", close[1])
+
+f_pivots(h, l, c) =>
+    pp = (h + l + c) / 3.0
+    r1 = 2.0 * pp - l
+    s1 = 2.0 * pp - h
+    r2 = pp + (h - l)
+    s2 = pp - (h - l)
+    r3 = h + 2.0 * (pp - l)
+    s3 = l - 2.0 * (pp - h)
+    m0 = 0.5 * (s2 + s3)
+    m1 = 0.5 * (s1 + s2)
+    m2 = 0.5 * (pp + s1)
+    m3 = 0.5 * (pp + r1)
+    m4 = 0.5 * (r1 + r2)
+    m5 = 0.5 * (r2 + r3)
+    // ordered S3,M0,S2,M1,S1,M2,PP,M3,R1,M4,R2,M5,R3
+    [s3, m0, s2, m1, s1, m2, pp, m3, r1, m4, r2, m5, r3]
+
+[dS3, dM0, dS2, dM1, dS1, dM2, dPP, dM3, dR1, dM4, dR2, dM5, dR3] = f_pivots(dH, dL, dC)
+[wS3, wM0, wS2, wM1, wS1, wM2, wPP, wM3, wR1, wM4, wR2, wM5, wR3] = f_pivots(wH, wL, wC)
+[mS3, mM0, mS2, mM1, mS1, mM2, mPP, mM3, mR1, mM4, mR2, mM5, mR3] = f_pivots(mH, mL, mC)
+
+dLv = array.from(dS3, dM0, dS2, dM1, dS1, dM2, dPP, dM3, dR1, dM4, dR2, dM5, dR3)
+wLv = array.from(wS3, wM0, wS2, wM1, wS1, wM2, wPP, wM3, wR1, wM4, wR2, wM5, wR3)
+mLv = array.from(mS3, mM0, mS2, mM1, mS1, mM2, mPP, mM3, mR1, mM4, mR2, mM5, mR3)
+
+// status vs current chart price (close-based breakout rule)
+f_status(level, cNow, cPrev, hi, lo) =>
+    if cNow > level and cPrev <= level
+        "BU"      // fresh breakout UP
+    else if cNow < level and cPrev >= level
+        "BD"      // fresh breakout DOWN
+    else if hi > level and cNow < level
+        "RU"      // rejection up (wick through, closed back below)
+    else if lo < level and cNow > level
+        "RD"      // rejection down
+    else if cNow > level
+        "AB"      // holding above (support)
+    else if cNow < level
+        "BL"      // holding below (resistance)
+    else
+        "AT"
+
+f_color(st) =>
+    st == "BU" ? color.new(#0e8a3c, 0) :
+    st == "BD" ? color.new(#c0392b, 0) :
+    st == "RU" or st == "RD" ? color.new(#e67e22, 0) :
+    st == "AB" ? color.new(#2ecc71, 35) :
+    st == "BL" ? color.new(#e74c3c, 35) :
+    color.new(#555555, 60)
+
+// confluence: index of level with most neighbours within band (else -1)
+band = confPips > 0 ? confPips : ta.atr(14) * 0.5
+f_confluence(lv, cNow) =>
+    best = -1
+    bestN = 2
+    for i = 0 to 12
+        li = array.get(lv, i)
+        n = 0
+        if math.abs(li - cNow) <= band
+            for j = 0 to 12
+                if j != i and math.abs(array.get(lv, j) - li) <= band
+                    n += 1
+        if n > bestN
+            bestN := n
+            best := i
+    best
+
+confD = f_confluence(dLv, close)
+confW = f_confluence(wLv, close)
+confM = f_confluence(mLv, close)
+
+// ---- chart currency bias (base vs quote strength) ----
+// Pine exposes syminfo.basecurrency but NOT a quote-currency variable;
+// derive quote by stripping the base from syminfo.ticker (e.g. "EURUSD"→"USD").
+baseC  = syminfo.basecurrency
+hasFX  = baseC != ""
+quoteC = hasFX ? str.replace_all(syminfo.ticker, baseC, "") : ""
+bias   = hasFX ? f_strOf(baseC) - f_strOf(quoteC) : 0.0
+
+// agreement marker: ✓ confirmed, ! break-risk, blank otherwise
+f_mark(st, b) =>
+    if not useCoupling or not hasFX
+        ""
+    else if (st == "AB" or st == "BU") and b > biasThr
+        " ✓"
+    else if (st == "BL" or st == "BD") and b < -biasThr
+        " ✓"
+    else if (st == "AB" or st == "BU") and b < -biasThr
+        " !"
+    else if (st == "BL" or st == "BD") and b > biasThr
+        " !"
+    else
+        ""
+
+f_markColor(st, b) =>
+    if not useCoupling or not hasFX
+        color.white
+    else if (st == "AB" or st == "BU") and b > biasThr
+        #ffd54a
+    else if (st == "BL" or st == "BD") and b < -biasThr
+        #ffd54a
+    else if (st == "AB" or st == "BU") and b < -biasThr
+        #ff5cf0
+    else if (st == "BL" or st == "BD") and b > biasThr
+        #ff5cf0
+    else
+        color.white
+
+// ----------------------- TABLE: HEATMAP ----------------------------
+var tbl = table.new(position.top_right, 14, 4, border_width = 1, frame_color = #333333, border_color = #333333)
+f_fillRow(tbl, r, tfLabel, lv, confIdx, b) =>
+    table.cell(tbl, 0, r, tfLabel, text_color = #cccccc, bgcolor = #1e1e1e)
+    for k = 0 to 12
+        lvl = array.get(lv, k)
+        st  = f_status(lvl, close, close[1], high, low)
+        col = f_color(st)
+        star = k == confIdx ? " ★" : ""
+        mark = f_mark(st, b)
+        mcol = f_markColor(st, b)
+        table.cell(tbl, k + 1, r, str.tostring(lvl, "#.####") + star + mark, text_color = mcol, bgcolor = col)
+
+if barstate.islast
+    labels = array.from("S3", "M0", "S2", "M1", "S1", "M2", "PP", "M3", "R1", "M4", "R2", "M5", "R3")
+    table.cell(tbl, 0, 0, "TF", text_color = #ffffff, bgcolor = #000000)
+    for k = 0 to 12
+        table.cell(tbl, k + 1, 0, array.get(labels, k), text_color = #ffffff, bgcolor = #000000)
+    f_fillRow(tbl, 1, "D", dLv, confD, bias)
+    f_fillRow(tbl, 2, "W", wLv, confW, bias)
+    f_fillRow(tbl, 3, "M", mLv, confM, bias)
+
+// ----------------------- TABLE: STRENGTH (top strip, mirror ref FXS row) ----
+// Reference screenshot = an FX-strength strip across the TOP of the chart with
+// 8 currency columns (EUR USD GBP JPY AUD NZD CHF CAD). We render it top-center,
+// full width, as a single-row heat strip with strength bars + bias readout.
+var stbl = table.new(position.top_center, 10, 2, border_width = 1, frame_color = #333333, border_color = #333333)
+if barstate.islast
+    table.cell(stbl, 0, 0, "STRENGTH", text_color = #ffffff, bgcolor = #000000)
+    for c = 0 to 7
+        name = array.get(ccy, c)
+        val  = array.get(sStr, c)
+        col  = val > 55 ? #2ecc71 : val < 45 ? #e74c3c : #888888
+        table.cell(stbl, c + 1, 0, name, text_color = col, bgcolor = #1e1e1e)
+        table.cell(stbl, c + 1, 1, str.tostring(val, "#.#"), text_color = col, bgcolor = #1e1e1e)
+    // bias readout on the strip (base vs quote for the chart symbol)
+    bcol = bias > biasThr ? #2ecc71 : bias < -biasThr ? #e74c3c : #888888
+    btxt = hasFX ? baseC + "/" + quoteC + " " + (bias >= 0 ? "+" : "") + str.tostring(bias, "#.#") : "n/a"
+    table.cell(stbl, 9, 0, "BIAS", text_color = #ffffff, bgcolor = #000000)
+    table.cell(stbl, 9, 1, btxt, text_color = bcol, bgcolor = #1e1e1e)
+
+// ----------------------- CHART PIVOT ZONES (Waynes-Pivots-Pro style) ----------
+// Reference (tradingviewbotexample.png) renders pivot levels ON the chart:
+//   - central pivot CP drawn orange
+//   - resistance side (R1..R3, M3..M5) red lines + red fill zone vs CP
+//   - support side   (S1..S3, M0..M2) green lines + green fill zone vs CP
+// Our additions: breakout-state coloring on the line + bias coupling tint +
+// a per-level RESPECT% (backtested: how often price came to the level and held
+// its side over a trailing window) and a GOOD-SPOT BUY/SELL readout.
+lvlSrc = chartPivotTF == "D" ? dLv : chartPivotTF == "W" ? wLv : mLv
+labels = array.from("S3", "M0", "S2", "M1", "S1", "M2", "PP", "M3", "R1", "M4", "R2", "M5", "R3")
+
+// respect%: trailing-window probability the level held its side when tagged
+f_respect(lvl) =>
+    win = 200
+    touched = 0
+    held = 0
+    for i = 0 to win - 1
+        o = open[i], c = close[i], h = high[i], l = low[i]
+        if l <= lvl and h >= lvl          // bar straddled the level
+            touched += 1
+            if (c > lvl) == (o > lvl)      // close stayed on entry side → level respected
+                held += 1
+    touched > 0 ? 100.0 * held / touched : 50.0
+
+// persistent objects: 1 CP line, 13 level lines, 12 fill lines (R/S vs CP), 13 labels
+var line cpLine   = line.new(na, na, na, na, xloc = xloc.bar_time, extend = extend.right, width = 2, color = #e6a23c)
+var line[] lvLine = array.new_line(13)
+var linefill[] lvFill = array.new_linefill(13)
+var label[] pLabels = array.new_label(13)
+for k = 0 to 12
+    if array.get(lvLine, k) == na
+        array.set(lvLine, k, line.new(na, na, na, na, xloc = xloc.bar_time, extend = extend.right, width = 1))
+    if array.get(lvFill, k) == na
+        array.set(lvFill, k, linefill.new(cpLine, array.get(lvLine, k), color = color.new(#555555, 90)))
+
+f_drawPivots(srcLv, b, tfTag) =>
+    pp = array.get(srcLv, 6)
+    span = timeframe.in_seconds() * 1000 * 300
+    line.set_xy1(cpLine, time - span, pp)
+    line.set_xy2(cpLine, time, pp)
+    for k = 0 to 12
+        lvl  = array.get(srcLv, k)
+        st   = f_status(lvl, close, close[1], high, low)
+        base = f_color(st)
+        col  = base
+        if useCoupling and hasFX
+            if (st == "AB" or st == "BU") and b > biasThr
+                col := #37ff8b
+            else if (st == "BL" or st == "BD") and b < -biasThr
+                col := #37ff8b
+            else if (st == "AB" or st == "BU") and b < -biasThr
+                col := #ff5cf0
+            else if (st == "BL" or st == "BD") and b > biasThr
+                col := #ff5cf0
+        ln = array.get(lvLine, k)
+        line.set_xy1(ln, time - span, lvl)
+        line.set_xy2(ln, time, lvl)
+        line.set_color(ln, col)
+        // zone fill: red above CP, green below CP
+        fillCol = lvl > pp ? color.new(#e74c3c, 88) : color.new(#2ecc71, 88)
+        linefill.set_color(array.get(lvFill, k), fillCol)
+        // right-edge label: level + value + ★ + respect%
+        r = f_respect(lvl)
+        isConf = k == (tfTag == "D" ? confD : tfTag == "W" ? confW : confM)
+        star = isConf ? " ★" : ""
+        mk = f_mark(st, b)
+        lbl = tfTag + " " + array.get(labels, k) + " " + str.tostring(lvl, "#.####") + star + mk + "  " + str.tostring(r, "#.#") + "%"
+        if array.get(pLabels, k) == na
+            array.set(pLabels, k, label.new(time, lvl, lbl, xloc = xloc.bar_time, style = label.style_label_left, textalign = text.align_right, size = size.small))
+        else
+            lb = array.get(pLabels, k)
+            label.set_xy(lb, time, lvl)
+            label.set_text(lb, lbl)
+            label.set_color(lb, col)
+            label.set_textcolor(lb, col)
+
+if showPivots
+    f_drawPivots(lvlSrc, bias, chartPivotTF)
+
+// ----------------------- GOOD-SPOT BUY/SELL READOUT --------------------------
+// Picks the strongest BUY zone (support below price) and SELL zone (resistance
+// above price) using: respect% + bias confirmation (✓) + confluence star.
+scoreOf(lvl, st, k, tfTag) =>
+    r = f_respect(lvl)
+    s = r * 0.6
+    if f_mark(st, bias) == " ✓"
+        s += 35
+    if k == (tfTag == "D" ? confD : tfTag == "W" ? confW : confM)
+        s += 25
+    s
+
+var label buyTag = na
+var label sellTag = na
+if showPivots and barstate.islast
+    bestBuy = float(na), bestBuyS = -1.0, bestSell = float(na), bestSellS = -1.0
+    for k = 0 to 12
+        lvl = array.get(lvlSrc, k)
+        st  = f_status(lvl, close, close[1], high, low)
+        sc  = scoreOf(lvl, st, k, chartPivotTF)
+        if lvl < close and sc > bestBuyS
+            bestBuyS := sc
+            bestBuy := lvl
+        if lvl > close and sc > bestSellS
+            bestSellS := sc
+            bestSell := lvl
+    if not na(bestBuy)
+        txtB = "▲ BUY ZONE  " + str.tostring(bestBuy, "#.####") + "  (" + str.tostring(bestBuyS, "#.#") + ")"
+        if na(buyTag)
+            buyTag := label.new(bar_index, bestBuy, txtB, style = label.style_label_up, color = #2ecc71, textcolor = #003300, size = size.normal)
+        else
+            label.set_xy(buyTag, bar_index, bestBuy)
+            label.set_text(buyTag, txtB)
+    if not na(bestSell)
+        txtS = "▼ SELL ZONE  " + str.tostring(bestSell, "#.####") + "  (" + str.tostring(bestSellS, "#.#") + ")"
+        if na(sellTag)
+            sellTag := label.new(bar_index, bestSell, txtS, style = label.style_label_down, color = #e74c3c, textcolor = #330000, size = size.normal)
+        else
+            label.set_xy(sellTag, bar_index, bestSell)
+            label.set_text(sellTag, txtS)
+
+// ----------------------- LEGEND (hint) -----------------------------
+//  CP = central pivot (orange)  R-side red fill / S-side green fill
+//  BU = breakout up  BD = breakout down  RU/RD = rejected wick  AB/BL = holding
+//  ★ = confluence (levels clustered within band)  ✓ = bias-confirmed  ! = break-risk
+//  right-edge % = RESPECT% (backtested: times price tagged level & held its side)
+//  ▲ BUY ZONE / ▼ SELL ZONE = app's best pick (respect% + bias + confluence)
