@@ -1,20 +1,29 @@
 {
   "name": "Relative-Currency-Strength-Matrix",
-  "version": "1.0",
+  "version": 2,
   "charts": [
     {
       "id": "main-eurusd",
       "symbol": "OANDA:EUR_USD",
       "interval": "60",
+      "timeframe": "1h",
       "indicators": [
-        "pivot-breakout-heatmap.pine"
+        {
+          "name": "Relative Currency Strength Matrix",
+          "studyId": "pivot-breakout-heatmap.pine",
+          "settings": {
+            "showRelStrength": true,
+            "gannMode": "Both",
+            "showHotzone": true,
+            "showRiskProj": true,
+            "strengthTF": "D"
+          }
+        }
       ],
-      "studies": [
-        {"name": "Relative Currency Strength Matrix", "settings": {"showRelStrength": true}},
-        {"name": "RSI", "settings": {"length": 14}}
-      ],
+      "drawings": [],
+      "studies": [],
       "layout": {"rows": 1, "cols": 1}
     }
   ],
-  "description": "Single EURUSD chart layout — all 8 major currency relative-strength lines compared to USD baseline. The matrix indicator plots EUR, GBP, JPY, AUD, NZD, CAD, CHF lines each as delta to USD, enabling direct visual comparison of EURUSD vs EURAUD vs EURJPY etc. Gann levels overlay as bands. Import: copy .json into TradingView 'My Layouts'. COT adjustment toggle OFF — awaiting live COT feed."
+  "description": "Single EURUSD chart — Relative Currency Strength Matrix indicator only. No watchlist import. Drop on any EURUSD chart (OANDA or FX:EURUSD)."
 }
