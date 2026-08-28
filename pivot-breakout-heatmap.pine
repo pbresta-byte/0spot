@@ -1,0 +1,163 @@
+//@version=6
+// =====================================================================
+//  RELATIVE CURRENCY STRENGTH MATRIX  (single EURUSD chart layout)
+//
+//  Plots all 8 major currencies as **relative-strength lines** on one
+//  chart so you can compare EUR vs GBP vs AUD vs JPY … at a glance.
+//
+//  • 28-pair ROC engine (OANDA:… D-period) → normalized 0..100 index
+//  • Each currency plotted as its *relative delta to the chart symbol's*
+//    quote currency, NOT an absolute reading, so EURUSD chart shows:
+//        EUR strength relative to USD = the EUR line itself
+//        GBP strength relative to USD = GBP line …
+//    → visual comparison "EURUSD vs EURAUD vs EURJPY" baked into one pane.
+//  • Gann Square-of-9 + HLC pivot S/R levels overlaid as horizontal bands
+//  • COT data placeholder input (future adjustment of the ROC weights)
+//
+//  SOURCE: internal-os book-catalog.csv row 1401 (Gann) + 28-pair ROC
+//          from proposal-currency-strength-index-skill.md
+// =====================================================================
+indicator("Relative Currency Strength Matrix", shorttitle = "RCSM",
+     overlay = true, max_lines_count = 300, max_labels_count = 100)
+
+// ── INPUTS ──────────────────────────────────────────────────────────
+showCotAdjustment = input.bool(false, "🔒 COT-weight adjustment (OFF — pending data hookup)")
+cotSpec           = input.string("net_reportable", "COT spec", options = ["net_reportable", "net_non_commercial", "net_commercial"])
+gannMode          = input.string("Both", "Level Type", options = ["Gann", "Pivot", "Both"])
+showRelStrength   = input.bool(true, "Draw Relative Strength Lines")
+strengthTF        = input.timeframe("D", "Strength TF", options = ["D", "W"])
+showHotzone       = input.bool(true, "Show Hotzone Labels")
+showRiskProj      = input.bool(true, "Adaptive Risk Projection (RR filter)")
+
+// ── 8-CURRENCY DEFINITIONS ──────────────────────────────────────────
+ccy = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
+pairs = array.from(
+    "EURUSD","EURGBP","EURJPY","EURAUD","EURNZD","EURCAD","EURCHF",
+    "GBPUSD","GBPJPY","GBPAUD","GBPNZD","GBPCAD","GBPCHF",
+    "USDJPY","USDCHF","USDCAD",
+    "AUDUSD","AUDJPY","AUDCAD","AUDCHF","AUDNZD",
+    "NZDUSD","NZDJPY","NZDCAD","NZDCHF",
+    "CADJPY","CADCHF","CHFJPY")
+
+// ── ACCUMULATOR + ROC ENGINE ────────────────────────────────────────
+acc = array.new_float(8, 0.0); cnt = array.new_int(8, 0)
+f_add(b, q, r) =>
+    bi := array.indexof(ccy, b); qi := array.indexof(ccy, q)
+    array.set(acc, bi, array.get(acc, bi) + r)
+    array.set(cnt, bi, array.get(cnt, bi) + 1)
+    array.set(acc, qi, array.get(acc, qi) - r)
+    array.set(cnt, qi, array.get(cnt, qi) + 1)
+
+for p in pairs
+    r = request.security("OANDA:" + p, strengthTF, ta.roc(close, 14))
+    f_add(str.sub(p,0,3), str.sub(p,3,3), r)
+
+// normalized 0..100 per currency
+var float[] sStr = array.new_float(8, 50.0)
+alpha = 2.0/(5+1)
+for c in 0..7
+    avg = cnt.get(c)>0 ? acc.get(c)/cnt.get(c) : 0.0
+    inst = math.max(0, math.min(100, 50+avg*12))
+    array.set(sStr, c, array.get(sStr,c)+alpha*(inst-array.get(sStr,c)))
+
+f_strOf(code) => (i := array.indexof(ccy, code)) >= 0 ? array.get(sStr, i) : 50.0
+
+// ── CHART-SYMBOL ADAPTIVE RELATIVE BASELINE ─────────────────────────
+// On an EURUSD chart, baseline = USD strength. Every other currency line
+// is therefore *relative to USD* → directly comparable.
+quoteC = str.replace_all(syminfo.ticker, syminfo.basecurrency, "")
+relQuote = f_strOf(quoteC)                    // the quote-currency strength baseline
+
+// ── RELATIVE-STRENGTH LINES (all 8 vs quote-currency) ────────────────
+cols = array.from(color.orange, color.blue, color.red, color.gray, color.lime, color.yellow, color.fuchsia, color.aqua)
+
+if showRelStrength
+    for c in 0..7
+        // value = currency strength minus the quote's strength
+        // this turns USD→0 on an EURUSD chart, so EUR=its own delta, GBP=GBP-
+        // USD delta, JPY=JPY-USD delta, etc. — visually comparable on 1 pane.
+        baseVal = array.get(sStr, c) - relQuote
+        plot(baseVal, title = "Rel_" + array.get(ccy, c),
+             color = array.get(cols, c), linewidth = 2, style = plot.style_linebr)
+
+// ── GANNSQUARE OF NINE PRICE LEVELS ─────────────────────────────────
+f_gannRing(n) => 4*n*n - 3*n + 1
+f_gannLevels(px) =>
+    rng = math.max(1, math.round(math.sqrt(px)) - 6) to math.round(math.sqrt(px)) + 6
+    lvl = array.new_float()
+    for n in rng
+        v = f_gannRing(n)
+        if math.abs(v-px) < px*0.02          // within 2% → relevant
+            array.push(lvl, v)
+    lvl
+gannLvls = f_gannLevels(close)
+
+// ── PIVOT LEVELS (D/W) ──────────────────────────────────────────────
+dH = request.security(syminfo.tickerid, "D", high[1])
+dL = request.security(syminfo.tickerid, "D", low[1])
+dC = request.security(syminfo.tickerid, "D", close[1])
+f_pivs(h,l,c) => [((h+l+c)/3.0), 2.0*(h+l+c)/3.0-l, (h+l+c)/3.0-(h-l), h+2.0*((h+l+c)/3.0-l), l-2.0*((h+l+c)/3.0-h)]
+[pp,dS1,dR1,dR2,dS2,dR3,dS3] = f_pivs(dH,dL,dC)
+
+// ── DRAW GANN / PIVOT BANDS ─────────────────────────────────────────
+if gannMode != "Pivot"
+    for lvl in gannLvls
+        clr = lvl>close ? color.new(#c0392b,70) : color.new(#0e8a3c,70)
+        hline(lvl, "", clr, hline.style_dashed, 1)
+if gannMode != "Gann"
+    hline(pp,  "PP(D)", color.new(#e6a23c,40), hline.style_dashed, 2)
+    hline(dR1, "R1(D)", color.new(#c0392b,75), hline.style_dashed, 1)
+    hline(dS1, "S1(D)", color.new(#0e8a3c,75), hline.style_dashed, 1)
+    hline(dR2, "R2(D)", color.new(#c0392b,85), hline.style_dotted, 1)
+    hline(dS2, "S2(D)", color.new(#0e8a3c,85), hline.style_dotted, 1)
+
+// ── HOTZONE + ADAPTIVE RISK LABELS ──────────────────────────────────
+baseC  = syminfo.basecurrency; hasFX = baseC != ""
+quoteStr = quoteC
+bias   = hasFX ? f_strOf(baseC) - f_strOf(quoteStr) : 0.0
+
+f_status(l,c,cp,h,l) =>
+    c>l and cp<=l ? "BU" : c<pp and cp>=pp ? "BD" :
+    h>pp and c<pp ? "RU" : l<pp and c>pp ? "RD" :
+    c>pp ? "AB" : c<pp ? "BL" : "AT"
+
+f_mark(st,b) =>
+    (st=="BU"or st=="AB") and b>10  ? " ✓" :
+    (st=="BU"or st=="AB") and b<-10  ? " !" :
+    (st=="BD"or st=="BL") and b<-10  ? " ✓" :
+    (st=="BD"or st=="BL") and b>10   ? " !" : ""
+
+// ── MACRO EVENT REFERENCE (star label in zone box) ──────────────────
+events = input.string("14:15 ECB|12:30 FOMC|13:30 NFP|10:00 BOE|01:30 AUD", "Macro Schedule")
+// parse at first bar → store sorted array
+// (simplified single-event display — nearest upcoming)
+f_macroRef() =>
+    nowM = (hour*60)+minute
+    best = "🌙 none"; bestD = 99999
+    for ev in events.split("|")
+        tp = ev.trim().split(" "); if tp.size==2
+            hhmm = tp.index(0).split(":"); mm = str.tonumber(hhmm.index(0))*60+str.tonumber(hhmm.index(1))
+            d = mm-nowM; if d<0 d+=1440
+            if d<bestD
+                bestD:=d; best:="★ "+tp.index(1)+" "+str.tostring(math.round(d/60.0),"#.#")+"h"
+    best
+
+// ── RISK-PROJECTION LABEL ───────────────────────────────────────────
+if showHotzone
+    st = f_status(pp, close, close[1], high, low)
+    rr = na
+    if (st=="BU"or st=="BD") and showRiskProj
+        dP = math.abs(close-pp)
+        tpP = dP * (bias>0?1.5:1.0)
+        rr := tpP / (dP*1.4)
+    if not na(rr) and rr>=2.0
+        starLab = f_macroRef()
+        dir = st=="BU"?"▲ BUY":"▼ SELL"
+        txt = dir + " " + str.tostring(pp,"#.####") + " | TP=" + str.tostring(math.round(tpP/syminfo.mintick* syminfo.mintick),"#.####") +
+              " | SL=" + str.tostring(math.round(dP*1.4/syminfo.mintick* syminfo.mintick),"#.####") + " | RR=" + str.tostring(rr,"#.1") + " | " + starLab
+        label.new(bar_index, pp, txt, style=label.style_label_left, color=color.new(#0e8a3c,85), textcolor=color.white, size=size.normal)
+
+// ── WARNING ─────────────────────────────────────────────────────────
+if showCotAdjustment
+    label.new(bar_index, high, "⚠ COT adjustment: OFF — awaiting live COT feed",
+              style=label.style_label_left, color=color.new(#ff9800,0), textcolor=color.black, size=size.tiny, yloc=yloc.abovebar)
