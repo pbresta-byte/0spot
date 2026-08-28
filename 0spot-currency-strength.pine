@@ -1,0 +1,68 @@
+//@version=6
+// 0SPOT — Relative Currency Strength Matrix
+// Single chart: all 8 majors vs USD baseline, cumulative 0-100 scale
+// Data source: OANDA pairs exclusively (28 pairs)
+// Weighting: conventional DXY-style (EUR heavy, JPY/GBP/CAD/AUD/CHF/NZD)
+// Pure display function — no Gann, no pivots, no risk labels
+
+indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=false, max_lines_count=500)
+
+// ===== INPUTS =====
+strengthTF = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M"])
+
+// ===== 8 MAJORS + 28 PAIRS (OANDA format) =====
+ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
+pairs = array.from(
+    "EURUSD","EURGBP","EURJPY","EURAUD","EURNZD","EURCAD","EURCHF",
+    "GBPUSD","GBPJPY","GBPAUD","GBPNZD","GBPCAD","GBPCHF",
+    "USDJPY","USDCHF","USDCAD",
+    "AUDUSD","AUDJPY","AUDCAD","AUDCHF","AUDNZD",
+    "NZDUSD","NZDJPY","NZDCAD","NZDCHF",
+    "CADJPY","CADCHF","CHFJPY")
+
+// ===== ROC ENGINE — global function =====
+roc_val(p) => request.security("OANDA:" + p, strengthTF, ta.roc(close, 14))
+
+// ===== ACCUMULATORS =====
+acc = array.new_float(8, 0.0)
+cnt = array.new_int(8, 0)
+
+f_add(b, q, r) =>
+    bi = array.indexof(ccy, b)
+    qi = array.indexof(ccy, q)
+    if bi >= 0
+        array.set(acc, bi, array.get(acc, bi) + r)
+        array.set(cnt, bi, array.get(cnt, bi) + 1)
+    if qi >= 0
+        array.set(acc, qi, array.get(acc, qi) - r)
+        array.set(cnt, qi, array.get(cnt, qi) + 1)
+
+// Feed all 28 pairs
+for p in pairs
+    f_add(str.substring(p, 0, 3), str.substring(p, 3, 6), roc_val(p))
+
+// ===== NORMALIZE TO 0-100 (cumulative relative scale) =====
+var float[] strength = array.new_float(8, 50.0)
+alpha = 2.0 / 6.0
+for i = 0 to 7
+    avg = cnt.get(i) > 0 ? acc.get(i) / cnt.get(i) : 0.0
+    inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
+    array.set(strength, i, array.get(strength, i) + alpha * (inst - array.get(strength, i)))
+
+// ===== RELATIVE TO CHART'S QUOTE CURRENCY =====
+// On EURUSD chart: USD = 50 (baseline), EUR = EUR strength relative to USD
+quoteC   = str.replace_all(syminfo.ticker, syminfo.basecurrency, "")
+relQuote = array.indexof(ccy, quoteC) >= 0 ? array.get(strength, array.indexof(ccy, quoteC)) : 50.0
+
+// ===== PLOT 8 COLOR-CODED LINES =====
+cols = array.from(#ff6b00, #2196f3, #f44336, #9e9e9e, #4caf50, #8bc34a, #ff9800, #00bcd4)
+// EUR=orange, USD=blue, GBP=red, JPY=gray, AUD=green, NZD=lightgreen, CAD=amber, CHF=cyan
+
+for i = 0 to 7
+    relVal = array.get(strength, i) - relQuote + 50.0  // center at 50
+    plot(relVal, array.get(ccy, i), color=array.get(cols, i), linewidth=2, style=plot.style_linebr)
+
+// ===== HLINE REFERENCES =====
+hline(50, "Baseline", color.gray, hline.style_dotted, 1)
+hline(70, "Strong", color.new(#4caf50, 50), hline.style_dotted, 1)
+hline(30, "Weak", color.new(#f44336, 50), hline.style_dotted, 1)
