@@ -54,8 +54,7 @@ f_add(b, q, r) =>
 
 for p in pairs
     sym = "OANDA:" + p
-    roc_expr = ta.roc(close, 14)
-    r = request.security(sym, strengthTF, roc_expr)
+    r = request.security(sym, strengthTF, ta.roc(close, 14))
     f_add(str.substring(p, 0, 3), str.substring(p, 3, 6), r)
 
 // normalized 0..100 per currency
@@ -79,23 +78,20 @@ relQuote = f_strOf(quoteC)                    // the quote-currency strength bas
 // ── RELATIVE-STRENGTH LINES (all 8 vs quote-currency) ────────────────
 cols = array.from(color.orange, color.blue, color.red, color.gray, color.lime, color.yellow, color.fuchsia, color.aqua)
 
-if showRelStrength
-    for c = 0 to 7
-        // value = currency strength minus the quote's strength
-        // this turns USD→0 on an EURUSD chart, so EUR=its own delta, GBP=GBP-
-        // USD delta, JPY=JPY-USD delta, etc. — visually comparable on 1 pane.
-        baseVal = array.get(sStr, c) - relQuote
-        plot(baseVal, title = "Rel_" + array.get(ccy, c),
-             color = array.get(cols, c), linewidth = 2, style = plot.style_linebr)
+// Plot at global scope — conditional via ternary so it only renders when enabled
+for c = 0 to 7
+    baseVal = array.get(sStr, c) - relQuote
+    showRelStrength ? plot(baseVal, title = "Rel_" + array.get(ccy, c),
+         color = array.get(cols, c), linewidth = 2, style = plot.style_linebr) : na
 
 // ── GANNSQUARE OF NINE PRICE LEVELS ─────────────────────────────────
 f_gannRing(n) => 4*n*n - 3*n + 1
 f_gannLevels(px) =>
     lo = math.round(math.sqrt(px)) - 6
     hi = math.round(math.sqrt(px)) + 6
-    rng = math.max(1, lo) to hi
+    lo := math.max(1, lo)
     lvl = array.new_float()
-    for n in rng
+    for n = lo to hi
         v = f_gannRing(n)
         if math.abs(v-px) < px*0.02          // within 2% → relevant
             array.push(lvl, v)
