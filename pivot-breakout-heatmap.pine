@@ -40,7 +40,8 @@ pairs = array.from(
     "CADJPY","CADCHF","CHFJPY")
 
 // ── ACCUMULATOR + ROC ENGINE ────────────────────────────────────────
-acc = array.new_float(8, 0.0); cnt = array.new_int(8, 0)
+acc = array.new_float(8, 0.0)
+cnt = array.new_int(8, 0)
 f_add(b, q, r) =>
     bi = array.indexof(ccy, b)
     qi = array.indexof(ccy, q)
