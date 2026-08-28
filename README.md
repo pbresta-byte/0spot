@@ -1,23 +1,30 @@
 # TradingView Indicators
 
-Two paired indicators, split so each does one job and reads correctly at any zoom level.
+**Single combined indicator** with three calculation modes (Pivot / Gann / Both-conf) for multi-currency relative-strength analysis on one chart.
 
-## Currency Strength Meter (`currency-strength-meter.pine`)
-MQLTA-style 8-currency strength meter (ROC across 28 majors), rendered as 8 line plots
-in their own pane instead of a table — put the currencies you're comparing on one chart,
-not a grid of numbers. Includes a corner label with the host chart symbol's base/quote bias.
+## Main Indicator
+- **`pivot-breakout-heatmap.pine`** — Relative Currency Strength Matrix
+  - **Calculation Type** dropdown: `Pivot` | `Gann` | `Both` (confluence)
+  - 8-currency ROC strength meter (28 OANDA pairs) plotted as **relative lines vs quote currency**
+  - Gann Square-of-9 levels (East cardinal `4n²−3n+1`) + HLC pivot bands overlay
+  - Adaptive risk labels: violation-pip-delta → projected TP/SL + RR filter + macro-event star reference
+  - COT adjustment placeholder (toggle OFF until live feed)
 
-## Price Hot Zone (`price-hot-zone.pine`)
-No pivot levels are drawn — no D/W/M tables, no on-chart lines/fills, not even a debug
-toggle. The app's whole job is one marker: the best BUY/SELL price to enter at, scored
-from a close-based breakout/respect backtest plus confluence. Internally it still ranks
-candidates using classic pivot math, but that ladder is never rendered, only the winner is.
-The ladder is built from one user-chosen timeframe (`input.timeframe`) instead of a fixed
-D/W/M set, and the respect% backtest window auto-scales to that timeframe, so the same
-marker logic works whether you're zoomed into a 1-minute chart or zoomed out to monthly.
+## TradingView Layout
+- **`relative-strength-matrix-layout.json`** — Importable single-chart layout (EURUSD, no watchlist)
 
-Run both indicators on the same chart to cross-reference strength and price action —
-they no longer share state (each is a standalone script), so there's no bias-coupling
-tint between them the way the old single-file version had.
+## Backtest Results
+- **`backtest_results.csv`** — 28 major pairs × 3 modes (Pivot / Gann / Both)
+  - Gann: fewer trades (~11K total), highest PF (2.6–4.3), lowest drawdown
+  - Both: ~71K trades, best efficiency per trade
+  - Pivot: max opportunity (~131K trades), more noise
 
-Source-anchored to price-action/price-levels/pivot-point skills (pl0 corpus).
+## Quick Start
+1. Copy `pivot-breakout-heatmap.pine` → TradingView Pine Editor → **Add to chart**
+2. Or import `relative-strength-matrix-layout.json` → Layouts → Import
+3. Works on any EURUSD chart (OANDA:EUR_USD, FX:EURUSD, TVC:DXY for DXY overlay)
+
+## Source Anchors
+- Gann Square-of-9 math: `book-catalog.csv` row 1401 (Master Stock Market Course) → `skills/gann-square-of-nine/SKILL.md`
+- 28-pair ROC strength: `proposal-currency-strength-index-skill.md` (MQLTA)
+- Pivot ladder + respect%: `skills/pivot-points/SKILL.md`, `skills/price-levels/SKILL.md`
