@@ -1,0 +1,8 @@
+0SPOT Currency Strength
+=======================
+
+Pine Script v6 indicator for TradingView
+File: 0spot-currency-strength.pine
+
+Displays 8 major currency relative strength (0-100) on a single chart
+using 28 OANDA pairs, ROC(14) cumulative weighted index.
