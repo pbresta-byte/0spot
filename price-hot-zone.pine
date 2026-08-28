@@ -1,0 +1,151 @@
+//@version=6
+// =====================================================================
+//  Price Hot Zone (Pine Script v6)
+//  Formerly "Currency Strength + Pivot Breakout Heatmap". This script draws
+//  NO pivot levels, lines, fills, or tables — the goal of the app is a
+//  single marker showing a good place to enter a trade, not a ladder of
+//  S/R levels to read. Internally it still scores candidate levels using
+//  classic pivot math, but that ladder is never rendered; only the winning
+//  BUY/SELL zone is. The ladder is built from a TIMEFRAME YOU CHOOSE — not
+//  a fixed D/W/M set — and the backtest window auto-scales to it, so the
+//  same marker logic works from a 1-minute chart up through monthly. Pair
+//  with currency-strength-meter.pine for the strength read.
+//
+//  SOURCE ANCHORS (internal-os knowledge/):
+//   - Pivot ladder + M0-M5 midpoints (internal scoring only, not drawn):
+//     skills/pivot-points/SKILL.md.
+//   - "Significant" = CLOSE-based breakout: skills/price-action/SKILL.md
+//     step 3 + skills/price-levels/SKILL.md. Wick-through that closes back
+//     inside = rejection, not a break.
+//   - Currency-strength bias coupling from the old single-file version was
+//     dropped here: Pine scripts can't share state across indicators, and
+//     re-running all 28 ROC calls in this script just for a bias tint isn't
+//     worth the request.security budget. Run both indicators on the chart
+//     to cross-reference manually.
+// =====================================================================
+
+indicator("Price Hot Zone", overlay = true, max_bars_back = 5000, max_labels_count = 10)
+
+// ------------------------- INPUTS -----------------------------------
+hotTF      = input.timeframe("D", "Hot-zone timeframe (scale)")
+confPips   = input.float(0.0, "Confluence band (0 = ATR x0.5)", minval = 0.0)
+minTouches = input.int(5, "Respect% min samples", minval = 1)
+lookback   = input.int(200, "Respect% lookback (chart bars)", minval = 20)
+autoScale  = input.bool(true, "Auto-scale lookback to hot-zone TF", tooltip = "When the hot-zone timeframe is higher than the chart's own timeframe, widen the respect% backtest window proportionally so it still covers a meaningful amount of real time instead of just ~200 tiny bars.")
+
+// ===================== CANDIDATE LEVELS (internal only, never drawn) ====
+hH = request.security(syminfo.tickerid, hotTF, high[1])
+hL = request.security(syminfo.tickerid, hotTF, low[1])
+hC = request.security(syminfo.tickerid, hotTF, close[1])
+
+f_pivots(h, l, c) =>
+    pp = (h + l + c) / 3.0
+    r1 = 2.0 * pp - l
+    s1 = 2.0 * pp - h
+    r2 = pp + (h - l)
+    s2 = pp - (h - l)
+    r3 = h + 2.0 * (pp - l)
+    s3 = l - 2.0 * (pp - h)
+    m0 = 0.5 * (s2 + s3)
+    m1 = 0.5 * (s1 + s2)
+    m2 = 0.5 * (pp + s1)
+    m3 = 0.5 * (pp + r1)
+    m4 = 0.5 * (r1 + r2)
+    m5 = 0.5 * (r2 + r3)
+    // ordered S3,M0,S2,M1,S1,M2,PP,M3,R1,M4,R2,M5,R3
+    [s3, m0, s2, m1, s1, m2, pp, m3, r1, m4, r2, m5, r3]
+
+[hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3] = f_pivots(hH, hL, hC)
+hLv = array.from(hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3)
+
+// confluence: index of the level with the most neighbours within band (else -1)
+band = confPips > 0 ? confPips : ta.atr(14) * 0.5
+f_confluence(lv, cNow) =>
+    best = -1
+    bestN = 2
+    for i = 0 to 12
+        li = array.get(lv, i)
+        n = 0
+        if math.abs(li - cNow) <= band
+            for j = 0 to 12
+                if j != i and math.abs(array.get(lv, j) - li) <= band
+                    n += 1
+        if n > bestN
+            bestN := n
+            best := i
+    best
+
+confH = f_confluence(hLv, close)
+
+// respect%: recency-weighted trailing-window probability the level held its
+// side when tagged. Lookback is in CHART bars; when auto-scaled it's widened
+// so a higher hot-zone timeframe still gets enough real history to backtest
+// against instead of only ~200 chart bars of it. An untested level (too few
+// weighted touches) returns na instead of a fake 50%.
+tfRatio = math.max(1.0, timeframe.in_seconds(hotTF) / timeframe.in_seconds())
+winBars = autoScale ? math.min(4900, int(math.round(lookback * tfRatio))) : lookback
+
+f_respect(lvl) =>
+    weightedTouched = 0.0
+    weightedHeld = 0.0
+    for i = 0 to winBars - 1
+        o = open[i]
+        c = close[i]
+        h = high[i]
+        l = low[i]
+        if l <= lvl and h >= lvl          // bar straddled the level
+            w = math.pow(0.985, i)        // recency weight: i = bars ago
+            weightedTouched += w
+            if (c > lvl) == (o > lvl)      // close stayed on entry side -> respected
+                weightedHeld += w
+    weightedTouched < minTouches ? na : 100.0 * weightedHeld / weightedTouched
+
+// score: respect% dominant (75%), confluence a flat bonus. (The old
+// bias-confirmation bonus was removed along with the coupling — see header.)
+scoreOf(lvl, k) =>
+    r = f_respect(lvl)
+    na(r) ? na : r * 0.75 + (k == confH ? 25.0 : 0.0)
+
+// ----------------------- THE HOT ZONE MARKER --------------------------
+// Picks the strongest BUY zone (support below price) and SELL zone
+// (resistance above price) from the ladder above. This marker is the app.
+var label buyTag = na
+var label sellTag = na
+if barstate.islast
+    bestBuy = float(na)
+    bestBuyS = -1.0
+    bestSell = float(na)
+    bestSellS = -1.0
+    for k = 0 to 12
+        lvl = array.get(hLv, k)
+        sc  = scoreOf(lvl, k)
+        if lvl < close and not na(sc) and sc > bestBuyS
+            bestBuyS := sc
+            bestBuy := lvl
+        if lvl > close and not na(sc) and sc > bestSellS
+            bestSellS := sc
+            bestSell := lvl
+    if not na(bestBuy)
+        txtB = "▲ BUY ZONE  " + str.tostring(bestBuy, "#.####") + "  (" + str.tostring(bestBuyS, "#.#") + ")"
+        if na(buyTag)
+            buyTag := label.new(bar_index, bestBuy, txtB, style = label.style_label_up, color = #2ecc71, textcolor = #003300, size = size.normal)
+        else
+            label.set_xy(buyTag, bar_index, bestBuy)
+            label.set_text(buyTag, txtB)
+    if not na(bestSell)
+        txtS = "▼ SELL ZONE  " + str.tostring(bestSell, "#.####") + "  (" + str.tostring(bestSellS, "#.#") + ")"
+        if na(sellTag)
+            sellTag := label.new(bar_index, bestSell, txtS, style = label.style_label_down, color = #e74c3c, textcolor = #330000, size = size.normal)
+        else
+            label.set_xy(sellTag, bar_index, bestSell)
+            label.set_text(sellTag, txtS)
+
+// ----------------------- LEGEND (hint) -----------------------------
+//  No pivot levels, lines, or tables are drawn — only the two zone markers.
+//  hotTF = the timeframe the internal candidate ladder is scored from — set
+//    it lower than chart TF to zoom into a tighter hot zone, or higher to
+//    see where price has historically respected levels on a bigger scale.
+//    Auto-scale keeps the respect backtest meaningful either way instead of
+//    only ~200 chart bars of it.
+//  ▲ BUY ZONE / ▼ SELL ZONE = the app's single best entry pick, scored from
+//    respect% (how often price has honored the level) + confluence.
