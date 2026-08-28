@@ -42,14 +42,18 @@ pairs = array.from(
 // ── ACCUMULATOR + ROC ENGINE ────────────────────────────────────────
 acc = array.new_float(8, 0.0); cnt = array.new_int(8, 0)
 f_add(b, q, r) =>
-    bi := array.indexof(ccy, b); qi := array.indexof(ccy, q)
-    array.set(acc, bi, array.get(acc, bi) + r)
-    array.set(cnt, bi, array.get(cnt, bi) + 1)
-    array.set(acc, qi, array.get(acc, qi) - r)
-    array.set(cnt, qi, array.get(cnt, qi) + 1)
+    bi = array.indexof(ccy, b)
+    qi = array.indexof(ccy, q)
+    if bi >= 0
+        array.set(acc, bi, array.get(acc, bi) + r)
+        array.set(cnt, bi, array.get(cnt, bi) + 1)
+    if qi >= 0
+        array.set(acc, qi, array.get(acc, qi) - r)
+        array.set(cnt, qi, array.get(cnt, qi) + 1)
 
 for p in pairs
-    r = request.security("OANDA:" + p, strengthTF, ta.roc(close, 14))
+    sym = "OANDA:" + p
+    r = request.security(sym, strengthTF, ta.roc(close, 14))
     f_add(str.sub(p,0,3), str.sub(p,3,3), r)
 
 // normalized 0..100 per currency
@@ -60,7 +64,9 @@ for c in 0..7
     inst = math.max(0, math.min(100, 50+avg*12))
     array.set(sStr, c, array.get(sStr,c)+alpha*(inst-array.get(sStr,c)))
 
-f_strOf(code) => (i := array.indexof(ccy, code)) >= 0 ? array.get(sStr, i) : 50.0
+f_strOf(code) =>
+    i = array.indexof(ccy, code)
+    i >= 0 ? array.get(sStr, i) : 50.0
 
 // ── CHART-SYMBOL ADAPTIVE RELATIVE BASELINE ─────────────────────────
 // On an EURUSD chart, baseline = USD strength. Every other currency line
@@ -153,8 +159,10 @@ if showHotzone
     if not na(rr) and rr>=2.0
         starLab = f_macroRef()
         dir = st=="BU"?"▲ BUY":"▼ SELL"
-        txt = dir + " " + str.tostring(pp,"#.####") + " | TP=" + str.tostring(math.round(tpP/syminfo.mintick* syminfo.mintick),"#.####") +
-              " | SL=" + str.tostring(math.round(dP*1.4/syminfo.mintick* syminfo.mintick),"#.####") + " | RR=" + str.tostring(rr,"#.1") + " | " + starLab
+        tpStr = str.tostring(math.round(tpP/syminfo.mintick*syminfo.mintick),"#.####")
+        slStr = str.tostring(math.round(dP*1.4/syminfo.mintick*syminfo.mintick),"#.####")
+        txt = dir + " " + str.tostring(pp,"#.####") + " | TP=" + tpStr +
+              " | SL=" + slStr + " | RR=" + str.tostring(rr,"#.1") + " | " + starLab
         label.new(bar_index, pp, txt, style=label.style_label_left, color=color.new(#0e8a3c,85), textcolor=color.white, size=size.normal)
 
 // ── WARNING ─────────────────────────────────────────────────────────
