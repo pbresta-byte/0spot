@@ -322,9 +322,9 @@ var line[] lvLine = array.new_line(13)
 var linefill[] lvFill = array.new_linefill(13)
 var label[] pLabels = array.new_label(13)
 for k = 0 to 12
-    if array.get(lvLine, k) == na
+    if na(array.get(lvLine, k))
         array.set(lvLine, k, line.new(na, na, na, na, xloc = xloc.bar_time, extend = extend.right, width = 1))
-    if array.get(lvFill, k) == na
+    if na(array.get(lvFill, k))
         array.set(lvFill, k, linefill.new(cpLine, array.get(lvLine, k), color = color.new(#555555, 90)))
 
 f_drawPivots(srcLv, b, tfTag) =>
@@ -360,7 +360,7 @@ f_drawPivots(srcLv, b, tfTag) =>
         mk = f_mark(st, b)
         rTxt = na(r) ? "  untested" : "  " + str.tostring(r, "#.#") + "%"
         lbl = tfTag + " " + array.get(labels, k) + " " + str.tostring(lvl, "#.####") + star + mk + rTxt
-        if array.get(pLabels, k) == na
+        if na(array.get(pLabels, k))
             array.set(pLabels, k, label.new(time, lvl, lbl, xloc = xloc.bar_time, style = label.style_label_left, textalign = text.align_right, size = size.small))
         else
             lb = array.get(pLabels, k)
