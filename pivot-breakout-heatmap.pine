@@ -54,13 +54,14 @@ f_add(b, q, r) =>
 
 for p in pairs
     sym = "OANDA:" + p
-    r = request.security(sym, strengthTF, ta.roc(close, 14))
-    f_add(str.sub(p,0,3), str.sub(p,3,3), r)
+    roc_expr = ta.roc(close, 14)
+    r = request.security(sym, strengthTF, roc_expr)
+    f_add(str.substring(p, 0, 3), str.substring(p, 3, 6), r)
 
 // normalized 0..100 per currency
 var float[] sStr = array.new_float(8, 50.0)
 alpha = 2.0/(5+1)
-for c in 0..7
+for c = 0 to 7
     avg = cnt.get(c)>0 ? acc.get(c)/cnt.get(c) : 0.0
     inst = math.max(0, math.min(100, 50+avg*12))
     array.set(sStr, c, array.get(sStr,c)+alpha*(inst-array.get(sStr,c)))
@@ -79,7 +80,7 @@ relQuote = f_strOf(quoteC)                    // the quote-currency strength bas
 cols = array.from(color.orange, color.blue, color.red, color.gray, color.lime, color.yellow, color.fuchsia, color.aqua)
 
 if showRelStrength
-    for c in 0..7
+    for c = 0 to 7
         // value = currency strength minus the quote's strength
         // this turns USD→0 on an EURUSD chart, so EUR=its own delta, GBP=GBP-
         // USD delta, JPY=JPY-USD delta, etc. — visually comparable on 1 pane.
