@@ -42,6 +42,7 @@ pairs = array.from(
 // ── ACCUMULATOR + ROC ENGINE ────────────────────────────────────────
 acc = array.new_float(8, 0.0)
 cnt = array.new_int(8, 0)
+
 f_add(b, q, r) =>
     bi = array.indexof(ccy, b)
     qi = array.indexof(ccy, q)
@@ -52,9 +53,10 @@ f_add(b, q, r) =>
         array.set(acc, qi, array.get(acc, qi) - r)
         array.set(cnt, qi, array.get(cnt, qi) + 1)
 
+roc_val(p) => request.security("OANDA:" + p, strengthTF, ta.roc(close, 14))
+
 for p in pairs
-    sym = "OANDA:" + p
-    r = request.security(sym, strengthTF, ta.roc(close, 14))
+    r = roc_val(p)
     f_add(str.substring(p, 0, 3), str.substring(p, 3, 6), r)
 
 // normalized 0..100 per currency
@@ -78,11 +80,12 @@ relQuote = f_strOf(quoteC)                    // the quote-currency strength bas
 // ── RELATIVE-STRENGTH LINES (all 8 vs quote-currency) ────────────────
 cols = array.from(color.orange, color.blue, color.red, color.gray, color.lime, color.yellow, color.fuchsia, color.aqua)
 
-// Plot at global scope — conditional via ternary so it only renders when enabled
+// Plot at global scope with display control
 for c = 0 to 7
     baseVal = array.get(sStr, c) - relQuote
-    showRelStrength ? plot(baseVal, title = "Rel_" + array.get(ccy, c),
-         color = array.get(cols, c), linewidth = 2, style = plot.style_linebr) : na
+    plot(baseVal, title = "Rel_" + array.get(ccy, c),
+         color = array.get(cols, c), linewidth = 2, style = plot.style_linebr,
+         display = showRelStrength ? display.all : display.none)
 
 // ── GANNSQUARE OF NINE PRICE LEVELS ─────────────────────────────────
 f_gannRing(n) => 4*n*n - 3*n + 1
@@ -98,12 +101,14 @@ f_gannLevels(px) =>
     lvl
 gannLvls = f_gannLevels(close)
 
-// ── PIVOT LEVELS (D/W) ──────────────────────────────────────────────
+// ── PIVOT LEVELS (D) ────────────────────────────────────────────────
 dH = request.security(syminfo.tickerid, "D", high[1])
 dL = request.security(syminfo.tickerid, "D", low[1])
 dC = request.security(syminfo.tickerid, "D", close[1])
 f_pivs(h,l,c) => [((h+l+c)/3.0), 2.0*(h+l+c)/3.0-l, (h+l+c)/3.0-(h-l), h+2.0*((h+l+c)/3.0-l), l-2.0*((h+l+c)/3.0-h)]
-[pp,dS1,dR1,dR2,dS2,dR3,dS3] = f_pivs(dH,dL,dC)
+[pp, dS1, dR1, dS2, dR2] = f_pivs(dH,dL,dC)
+dR3 = dR2 + (dR2 - dR1)
+dS3 = dS2 - (dR1 - dS1)
 
 // ── DRAW GANN / PIVOT BANDS ─────────────────────────────────────────
 if gannMode != "Pivot"
@@ -116,6 +121,8 @@ if gannMode != "Gann"
     hline(dS1, "S1(D)", color.new(#0e8a3c,75), hline.style_dashed, 1)
     hline(dR2, "R2(D)", color.new(#c0392b,85), hline.style_dotted, 1)
     hline(dS2, "S2(D)", color.new(#0e8a3c,85), hline.style_dotted, 1)
+    hline(dR3, "R3(D)", color.new(#c0392b,90), hline.style_dotted, 1)
+    hline(dS3, "S3(D)", color.new(#0e8a3c,90), hline.style_dotted, 1)
 
 // ── HOTZONE + ADAPTIVE RISK LABELS ──────────────────────────────────
 baseC  = syminfo.basecurrency
