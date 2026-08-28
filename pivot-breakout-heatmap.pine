@@ -173,12 +173,18 @@ f_status(level, cNow, cPrev, hi, lo) =>
         "AT"
 
 f_color(st) =>
-    st == "BU" ? color.new(#0e8a3c, 0) :
-    st == "BD" ? color.new(#c0392b, 0) :
-    st == "RU" or st == "RD" ? color.new(#e67e22, 0) :
-    st == "AB" ? color.new(#2ecc71, 35) :
-    st == "BL" ? color.new(#e74c3c, 35) :
-    color.new(#555555, 60)
+    if st == "BU"
+        color.new(#0e8a3c, 0)
+    else if st == "BD"
+        color.new(#c0392b, 0)
+    else if st == "RU" or st == "RD"
+        color.new(#e67e22, 0)
+    else if st == "AB"
+        color.new(#2ecc71, 35)
+    else if st == "BL"
+        color.new(#e74c3c, 35)
+    else
+        color.new(#555555, 60)
 
 // confluence: index of level with most neighbours within band (else -1)
 band = confPips > 0 ? confPips : ta.atr(14) * 0.5
