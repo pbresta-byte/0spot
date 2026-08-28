@@ -90,7 +90,9 @@ if showRelStrength
 // ── GANNSQUARE OF NINE PRICE LEVELS ─────────────────────────────────
 f_gannRing(n) => 4*n*n - 3*n + 1
 f_gannLevels(px) =>
-    rng = math.max(1, math.round(math.sqrt(px)) - 6) to math.round(math.sqrt(px)) + 6
+    lo = math.round(math.sqrt(px)) - 6
+    hi = math.round(math.sqrt(px)) + 6
+    rng = math.max(1, lo) to hi
     lvl = array.new_float()
     for n in rng
         v = f_gannRing(n)
@@ -119,7 +121,8 @@ if gannMode != "Gann"
     hline(dS2, "S2(D)", color.new(#0e8a3c,85), hline.style_dotted, 1)
 
 // ── HOTZONE + ADAPTIVE RISK LABELS ──────────────────────────────────
-baseC  = syminfo.basecurrency; hasFX = baseC != ""
+baseC  = syminfo.basecurrency
+hasFX = baseC != ""
 quoteStr = quoteC
 bias   = hasFX ? f_strOf(baseC) - f_strOf(quoteStr) : 0.0
 
@@ -140,13 +143,19 @@ events = input.string("14:15 ECB|12:30 FOMC|13:30 NFP|10:00 BOE|01:30 AUD", "Mac
 // (simplified single-event display — nearest upcoming)
 f_macroRef() =>
     nowM = (hour*60)+minute
-    best = "🌙 none"; bestD = 99999
+    best = "🌙 none"
+    bestD = 99999
     for ev in events.split("|")
-        tp = ev.trim().split(" "); if tp.size==2
-            hhmm = tp.index(0).split(":"); mm = str.tonumber(hhmm.index(0))*60+str.tonumber(hhmm.index(1))
-            d = mm-nowM; if d<0 d+=1440
-            if d<bestD
-                bestD:=d; best:="★ "+tp.index(1)+" "+str.tostring(math.round(d/60.0),"#.#")+"h"
+        tp = ev.trim().split(" ")
+        if tp.size == 2
+            hhmm = tp.index(0).split(":")
+            mm = str.tonumber(hhmm.index(0)) * 60 + str.tonumber(hhmm.index(1))
+            d = mm - nowM
+            if d < 0
+                d += 1440
+            if d < bestD
+                bestD := d
+                best := "★ " + tp.index(1) + " " + str.tostring(math.round(d / 60.0), "#.#") + "h"
     best
 
 // ── RISK-PROJECTION LABEL ───────────────────────────────────────────
