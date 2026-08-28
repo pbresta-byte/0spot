@@ -1,14 +1,13 @@
 //@version=6
-// 0SPOT — Relative Currency Strength Matrix
-// Single chart: all 8 majors vs USD baseline, cumulative 0-100 scale
-// Data source: OANDA pairs exclusively (28 pairs)
-// Weighting: conventional DXY-style (EUR heavy, JPY/GBP/CAD/AUD/CHF/NZD)
-// Pure display function — no Gann, no pivots, no risk labels
+// 0SPOT — Currency Strength Matrix (overlay on main chart)
+// 8 majors, 28 OANDA pairs, cumulative 0-100 relative strength
+// Color-coded legend bottom-left, lines on price chart for visual snapshot
 
-indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=false, max_lines_count=500)
+indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines_count=500)
 
 // ===== INPUTS =====
-strengthTF = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M"])
+strengthTF    = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M"])
+showLegend    = input.bool(true, "Show Legend (bottom-left)")
 
 // ===== 8 MAJORS + 28 PAIRS (OANDA format) =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
@@ -20,7 +19,11 @@ pairs = array.from(
     "NZDUSD","NZDJPY","NZDCAD","NZDCHF",
     "CADJPY","CADCHF","CHFJPY")
 
-// ===== ROC ENGINE — global function =====
+// ===== COLORS (matching reference: EUR=blue, GBP=yellow, JPY=red, USD=green, etc.) =====
+cols = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
+// 0:EUR=blue, 1:USD=green, 2:GBP=yellow, 3:JPY=red, 4:AUD=orange, 5:NZD=lightgreen, 6:CAD=deeporange, 7:CHF=cyan
+
+// ===== ROC ENGINE =====
 roc_val(p) => request.security("OANDA:" + p, strengthTF, ta.roc(close, 14))
 
 // ===== ACCUMULATORS =====
@@ -37,11 +40,10 @@ f_add(b, q, r) =>
         array.set(acc, qi, array.get(acc, qi) - r)
         array.set(cnt, qi, array.get(cnt, qi) + 1)
 
-// Feed all 28 pairs
 for p in pairs
     f_add(str.substring(p, 0, 3), str.substring(p, 3, 6), roc_val(p))
 
-// ===== NORMALIZE TO 0-100 (cumulative relative scale) =====
+// ===== NORMALIZE 0-100 (EMA smoothed, centered at 50) =====
 var float[] strength = array.new_float(8, 50.0)
 alpha = 2.0 / 6.0
 for i = 0 to 7
@@ -50,19 +52,40 @@ for i = 0 to 7
     array.set(strength, i, array.get(strength, i) + alpha * (inst - array.get(strength, i)))
 
 // ===== RELATIVE TO CHART'S QUOTE CURRENCY =====
-// On EURUSD chart: USD = 50 (baseline), EUR = EUR strength relative to USD
-quoteC   = str.replace_all(syminfo.ticker, syminfo.basecurrency, "")
-relQuote = array.indexof(ccy, quoteC) >= 0 ? array.get(strength, array.indexof(ccy, quoteC)) : 50.0
+quoteC = str.replace_all(syminfo.ticker, syminfo.basecurrency, "")
+qIdx   = array.indexof(ccy, quoteC)
+relQuote = qIdx >= 0 ? array.get(strength, qIdx) : 50.0
 
-// ===== PLOT 8 COLOR-CODED LINES =====
-cols = array.from(#ff6b00, #2196f3, #f44336, #9e9e9e, #4caf50, #8bc34a, #ff9800, #00bcd4)
-// EUR=orange, USD=blue, GBP=red, JPY=gray, AUD=green, NZD=lightgreen, CAD=amber, CHF=cyan
+// ===== PLOT 8 LINES ON MAIN CHART (scaled to price range for visibility) =====
+// Map 0-100 strength to price chart range
+priceHi = high
+priceLo = low
+priceRg = priceHi - priceLo
+midPx   = (priceHi + priceLo) / 2.0
 
 for i = 0 to 7
-    relVal = array.get(strength, i) - relQuote + 50.0  // center at 50
-    plot(relVal, array.get(ccy, i), color=array.get(cols, i), linewidth=2, style=plot.style_linebr)
+    relVal = array.get(strength, i) - relQuote + 50.0  // 0-100 centered at 50
+    // Map to price chart: 50 → mid price, 100 → high, 0 → low
+    plotPx = midPx + (relVal - 50.0) / 50.0 * priceRg * 0.8
+    plot(plotPx, array.get(ccy, i), color=array.get(cols, i), linewidth=2, style=plot.style_linebr)
 
-// ===== HLINE REFERENCES =====
-hline(50, "Baseline", color.gray, hline.style_dotted, 1)
-hline(70, "Strong", color.new(#4caf50, 50), hline.style_dotted, 1)
-hline(30, "Weak", color.new(#f44336, 50), hline.style_dotted, 1)
+// ===== LEGEND TABLE (bottom-left) =====
+var table leg = table.new(position.bottom_left, 2, 9, border_width=1, border_color=color.new(color.black, 50), frame_width=1, frame_color=color.new(color.black, 50))
+
+if barstate.islast and showLegend
+    // Header
+    table.cell(leg, 0, 0, "0SPOT", text_color=color.white, text_size=size.small, bgcolor=color.new(#1e1e1e, 90))
+    table.cell(leg, 1, 0, "Strength", text_color=color.white, text_size=size.small, bgcolor=color.new(#1e1e1e, 90))
+    
+    for i = 0 to 7
+        c = array.get(ccy, i)
+        cColor = array.get(cols, i)
+        val = array.get(strength, i) - relQuote + 50.0
+        // Colored square + code
+        table.cell(leg, 0, i+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#1e1e1e, 90))
+        // Value
+        table.cell(leg, 1, i+1, str.tostring(val, "#.#"), text_color=color.white, text_size=size.small, bgcolor=color.new(#1e1e1e, 90))
+
+// ===== REFERENCE LINES (optional, subtle) =====
+// These are visual guides on the price chart
+// hline not available in overlay=true easily, so using plot
