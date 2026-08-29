@@ -1,12 +1,13 @@
 //@version=6
-// 0SPOT — Currency Strength Matrix (Daily only, 28 pairs)
-// 8 majors, 28 OANDA pairs, 0-100 relative strength (Daily)
+// 0SPOT — Currency Strength Matrix (D/W/M, 13 major pairs + delta)
+// 8 majors, 13 liquid OANDA pairs, 0-100 relative strength across D/W/M
 // Rectangular table bottom-right, black text values, color-coded currency labels
 
 indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines_count=500)
 
 // ===== INPUTS =====
 showTable     = input.bool(true, "Show Strength Table")
+showDelta     = input.bool(true, "Show D→W / W→M Delta")
 tablePos      = input.string("bottom_right", "Table Position", options=["bottom_right", "bottom_left", "top_right", "top_left"])
 decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
 
@@ -14,14 +15,14 @@ decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
 cols  = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
 
-// ===== PAIRS (28) - no underscores for OANDA format =====
+// ===== PAIRS (13) - major liquid pairs only, no underscores for OANDA format =====
 pairs = array.from(
-    "EURUSD","EURGBP","EURJPY","EURAUD","EURNZD","EURCAD","EURCHF",
-    "GBPUSD","GBPJPY","GBPAUD","GBPNZD","GBPCAD","GBPCHF",
+    "EURUSD","EURGBP","EURJPY","EURCHF",
+    "GBPUSD","GBPJPY",
     "USDJPY","USDCHF","USDCAD",
-    "AUDUSD","AUDJPY","AUDCAD","AUDCHF","AUDNZD",
-    "NZDUSD","NZDJPY","NZDCAD","NZDCHF",
-    "CADJPY","CADCHF","CHFJPY")
+    "AUDUSD","AUDJPY",
+    "NZDUSD",
+    "CADJPY")
 
 // ===== HELPER: add ROC to accumulators =====
 add_to_acc(acc_arr, cnt_arr, b, q, r) =>
@@ -34,8 +35,8 @@ add_to_acc(acc_arr, cnt_arr, b, q, r) =>
         array.set(acc_arr, qi, array.get(acc_arr, qi) - r)
         array.set(cnt_arr, qi, array.get(cnt_arr, qi) + 1)
 
-// ===== DAILY ENGINE =====
-compute_daily_strength() =>
+// ===== MULTI-TIMEFRAME ENGINE =====
+compute_strength(tf) =>
     var float[] acc = array.new_float(8, 0.0)
     var int[]   cnt = array.new_int(8, 0)
     
@@ -44,64 +45,34 @@ compute_daily_strength() =>
         array.set(acc, i, 0.0)
         array.set(cnt, i, 0)
     
-    // 28 ROC calls (Daily) at global scope via request.security
-    r0  = request.security("OANDA:EURUSD",  "D", ta.roc(close, 14))
-    r1  = request.security("OANDA:EURGBP",  "D", ta.roc(close, 14))
-    r2  = request.security("OANDA:EURJPY",  "D", ta.roc(close, 14))
-    r3  = request.security("OANDA:EURAUD",  "D", ta.roc(close, 14))
-    r4  = request.security("OANDA:EURNZD",  "D", ta.roc(close, 14))
-    r5  = request.security("OANDA:EURCAD",  "D", ta.roc(close, 14))
-    r6  = request.security("OANDA:EURCHF",  "D", ta.roc(close, 14))
-    r7  = request.security("OANDA:GBPUSD",  "D", ta.roc(close, 14))
-    r8  = request.security("OANDA:GBPJPY",  "D", ta.roc(close, 14))
-    r9  = request.security("OANDA:GBPAUD",  "D", ta.roc(close, 14))
-    r10 = request.security("OANDA:GBPNZD",  "D", ta.roc(close, 14))
-    r11 = request.security("OANDA:GBPCAD",  "D", ta.roc(close, 14))
-    r12 = request.security("OANDA:GBPCHF",  "D", ta.roc(close, 14))
-    r13 = request.security("OANDA:USDJPY",  "D", ta.roc(close, 14))
-    r14 = request.security("OANDA:USDCHF",  "D", ta.roc(close, 14))
-    r15 = request.security("OANDA:USDCAD",  "D", ta.roc(close, 14))
-    r16 = request.security("OANDA:AUDUSD",  "D", ta.roc(close, 14))
-    r17 = request.security("OANDA:AUDJPY",  "D", ta.roc(close, 14))
-    r18 = request.security("OANDA:AUDCAD",  "D", ta.roc(close, 14))
-    r19 = request.security("OANDA:AUDCHF",  "D", ta.roc(close, 14))
-    r20 = request.security("OANDA:AUDNZD",  "D", ta.roc(close, 14))
-    r21 = request.security("OANDA:NZDUSD",  "D", ta.roc(close, 14))
-    r22 = request.security("OANDA:NZDJPY",  "D", ta.roc(close, 14))
-    r23 = request.security("OANDA:NZDCAD",  "D", ta.roc(close, 14))
-    r24 = request.security("OANDA:NZDCHF",  "D", ta.roc(close, 14))
-    r25 = request.security("OANDA:CADJPY",  "D", ta.roc(close, 14))
-    r26 = request.security("OANDA:CADCHF",  "D", ta.roc(close, 14))
-    r27 = request.security("OANDA:CHFJPY",  "D", ta.roc(close, 14))
+    // 13 ROC calls at global scope via request.security
+    r0  = request.security("OANDA:EURUSD",  tf, ta.roc(close, 14))
+    r1  = request.security("OANDA:EURGBP",  tf, ta.roc(close, 14))
+    r2  = request.security("OANDA:EURJPY",  tf, ta.roc(close, 14))
+    r3  = request.security("OANDA:EURCHF",  tf, ta.roc(close, 14))
+    r4  = request.security("OANDA:GBPUSD",  tf, ta.roc(close, 14))
+    r5  = request.security("OANDA:GBPJPY",  tf, ta.roc(close, 14))
+    r6  = request.security("OANDA:USDJPY",  tf, ta.roc(close, 14))
+    r7  = request.security("OANDA:USDCHF",  tf, ta.roc(close, 14))
+    r8  = request.security("OANDA:USDCAD",  tf, ta.roc(close, 14))
+    r9  = request.security("OANDA:AUDUSD",  tf, ta.roc(close, 14))
+    r10 = request.security("OANDA:AUDJPY",  tf, ta.roc(close, 14))
+    r11 = request.security("OANDA:NZDUSD",  tf, ta.roc(close, 14))
+    r12 = request.security("OANDA:CADJPY",  tf, ta.roc(close, 14))
     
     add_to_acc(acc, cnt, "EUR", "USD", r0)
     add_to_acc(acc, cnt, "EUR", "GBP", r1)
     add_to_acc(acc, cnt, "EUR", "JPY", r2)
-    add_to_acc(acc, cnt, "EUR", "AUD", r3)
-    add_to_acc(acc, cnt, "EUR", "NZD", r4)
-    add_to_acc(acc, cnt, "EUR", "CAD", r5)
-    add_to_acc(acc, cnt, "EUR", "CHF", r6)
-    add_to_acc(acc, cnt, "GBP", "USD", r7)
-    add_to_acc(acc, cnt, "GBP", "JPY", r8)
-    add_to_acc(acc, cnt, "GBP", "AUD", r9)
-    add_to_acc(acc, cnt, "GBP", "NZD", r10)
-    add_to_acc(acc, cnt, "GBP", "CAD", r11)
-    add_to_acc(acc, cnt, "GBP", "CHF", r12)
-    add_to_acc(acc, cnt, "USD", "JPY", r13)
-    add_to_acc(acc, cnt, "USD", "CHF", r14)
-    add_to_acc(acc, cnt, "USD", "CAD", r15)
-    add_to_acc(acc, cnt, "AUD", "USD", r16)
-    add_to_acc(acc, cnt, "AUD", "JPY", r17)
-    add_to_acc(acc, cnt, "AUD", "CAD", r18)
-    add_to_acc(acc, cnt, "AUD", "CHF", r19)
-    add_to_acc(acc, cnt, "AUD", "NZD", r20)
-    add_to_acc(acc, cnt, "NZD", "USD", r21)
-    add_to_acc(acc, cnt, "NZD", "JPY", r22)
-    add_to_acc(acc, cnt, "NZD", "CAD", r23)
-    add_to_acc(acc, cnt, "NZD", "CHF", r24)
-    add_to_acc(acc, cnt, "CAD", "JPY", r25)
-    add_to_acc(acc, cnt, "CAD", "CHF", r26)
-    add_to_acc(acc, cnt, "CHF", "JPY", r27)
+    add_to_acc(acc, cnt, "EUR", "CHF", r3)
+    add_to_acc(acc, cnt, "GBP", "USD", r4)
+    add_to_acc(acc, cnt, "GBP", "JPY", r5)
+    add_to_acc(acc, cnt, "USD", "JPY", r6)
+    add_to_acc(acc, cnt, "USD", "CHF", r7)
+    add_to_acc(acc, cnt, "USD", "CAD", r8)
+    add_to_acc(acc, cnt, "AUD", "USD", r9)
+    add_to_acc(acc, cnt, "AUD", "JPY", r10)
+    add_to_acc(acc, cnt, "NZD", "USD", r11)
+    add_to_acc(acc, cnt, "CAD", "JPY", r12)
     
     // Normalize 0-100 with EMA smoothing
     var float[] strength = array.new_float(8, 50.0)
@@ -127,21 +98,33 @@ rank_currencies(str_arr) =>
             j := j - 1
     array.copy(r)
 
-// Compute Daily only
-strength_D = compute_daily_strength()
+// Compute for D, W, M (39 calls total, under 40 limit)
+strength_D = compute_strength("D")
+strength_W = compute_strength("W")
+strength_M = compute_strength("M")
+
 rank_D = rank_currencies(strength_D)
+rank_W = rank_currencies(strength_W)
+rank_M = rank_currencies(strength_M)
 
 // ===== TABLE (rectangular, bottom-right) =====
 var table tbl = na
 pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
 
 if barstate.islast and showTable
-    tbl := table.new(pos, 3, 10, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
+    // Columns: CCY, DAILY, WEEKLY, MONTHLY, RANK, [D→W Δ], [W→M Δ]
+    colCount = showDelta ? 7 : 5
+    tbl := table.new(pos, colCount, 10, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
     
-    // Header (3 columns: CCY, DAILY, RANK)
+    // Header
     table.cell(tbl, 0, 0, "CCY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
     table.cell(tbl, 1, 0, "DAILY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-    table.cell(tbl, 2, 0, "RANK", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    table.cell(tbl, 2, 0, "WEEKLY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    table.cell(tbl, 3, 0, "MONTHLY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    table.cell(tbl, 4, 0, "RANK", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    if showDelta
+        table.cell(tbl, 5, 0, "D→W Δ", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+        table.cell(tbl, 6, 0, "W→M Δ", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
     
     for row = 0 to 7
         idx = array.get(rank_D, row)
@@ -156,14 +139,32 @@ if barstate.islast and showTable
                 fmtStr := fmtStr + "0"
         
         valD = str.tostring(array.get(strength_D, idx), fmtStr)
-        rD = str.tostring(array.indexof(rank_D, idx) + 1, "#")
+        valW = str.tostring(array.get(strength_W, idx), fmtStr)
+        valM = str.tostring(array.get(strength_M, idx), fmtStr)
+        rD   = str.tostring(array.indexof(rank_D, idx) + 1, "#")
+        
+        // Deltas
+        dDW = str.tostring(array.get(strength_W, idx) - array.get(strength_D, idx), "+#.##;-#.##")
+        dWM = str.tostring(array.get(strength_M, idx) - array.get(strength_W, idx), "+#.##;-#.##")
         
         // Currency label (color-coded)
         table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
         // Daily (black text on colored bg)
         table.cell(tbl, 1, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        // Weekly
+        table.cell(tbl, 2, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        // Monthly
+        table.cell(tbl, 3, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
         // Rank
-        table.cell(tbl, 2, row+1, "  " + rD + "  ", text_color=color.white, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        table.cell(tbl, 4, row+1, "  " + rD + "  ", text_color=color.white, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        // Deltas
+        if showDelta
+            // D→W delta - green if improving, red if declining
+            dwColor = (array.get(strength_W, idx) - array.get(strength_D, idx)) >= 0 ? color.new(#4caf50, 0) : color.new(#f44336, 0)
+            table.cell(tbl, 5, row+1, "  " + dDW + "  ", text_color=dwColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+            // W→M delta
+            wmColor = (array.get(strength_M, idx) - array.get(strength_W, idx)) >= 0 ? color.new(#4caf50, 0) : color.new(#f44336, 0)
+            table.cell(tbl, 6, row+1, "  " + dWM + "  ", text_color=wmColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
 
 // Clean chart (no plots)
 plot(na)
