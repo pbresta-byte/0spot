@@ -1,14 +1,15 @@
 //@version=6
-// 0SPOT — Currency Strength Matrix (overlay on main chart)
-// 8 majors, 28 OANDA pairs, cumulative 0-100 relative strength
-// Color-coded legend bottom-left, lines on price chart for visual snapshot
+// 0SPOT — Currency Strength Matrix (numerical aggregate)
+// 8 majors, 28 OANDA pairs, 0-100 relative strength
+// Rectangular table bottom-right, black text values, color-coded currency labels
 
-indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines_count=500)
+indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=false, max_lines_count=500)
 
 // ===== INPUTS =====
 strengthTF    = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M"])
-showLegend    = input.bool(true, "Show Legend (bottom-left)")
-showCompare   = input.bool(false, "Show Pair Comparison Overlays")
+showTable     = input.bool(true, "Show Strength Table")
+tablePos      = input.string("bottom_right", "Table Position", options=["bottom_right", "bottom_left", "top_right", "top_left"])
+decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
 
 // ===== 8 MAJORS =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
@@ -28,7 +29,7 @@ f_add(b, q, r) =>
         array.set(acc, qi, array.get(acc, qi) - r)
         array.set(cnt, qi, array.get(cnt, qi) + 1)
 
-// ===== ROC ENGINE (all 28 at global scope — fixes CW10003) =====
+// ===== ROC ENGINE (all 28 at global scope) =====
 // TradingView OANDA format: OANDA:EURUSD (NO underscore)
 r0  = request.security("OANDA:EURUSD",  strengthTF, ta.roc(close, 14))
 r1  = request.security("OANDA:EURGBP",  strengthTF, ta.roc(close, 14))
@@ -59,7 +60,7 @@ r25 = request.security("OANDA:CADJPY",  strengthTF, ta.roc(close, 14))
 r26 = request.security("OANDA:CADCHF",  strengthTF, ta.roc(close, 14))
 r27 = request.security("OANDA:CHFJPY",  strengthTF, ta.roc(close, 14))
 
-// Feed accumulators (global scope — fixes CE10005)
+// Feed accumulators
 f_add("EUR", "USD", r0)
 f_add("EUR", "GBP", r1)
 f_add("EUR", "JPY", r2)
@@ -97,66 +98,46 @@ for i = 0 to 7
     inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
     array.set(strength, i, array.get(strength, i) + alpha * (inst - array.get(strength, i)))
 
-// ===== RELATIVE TO CHART'S QUOTE CURRENCY =====
-// OANDA ticker format: OANDA:EURUSD → quoteC by removing "OANDA:" + baseC
-chartPair = str.replace_all(syminfo.ticker, "OANDA:", "")
-baseC = syminfo.basecurrency
-quoteC = str.replace(chartPair, baseC, "")
-qIdx   = array.indexof(ccy, quoteC)
-relQuote = qIdx >= 0 ? array.get(strength, qIdx) : 50.0
+// ===== BUILD RANKING (strongest to weakest) =====
+var int[] rank = array.new_int(8, 0)
+for i = 0 to 7
+    array.set(rank, i, i)
 
-// ===== PLOT 8 STRENGTH LINES ON CHART =====
-priceHi = high
-priceLo = low
-priceRg = priceHi - priceLo
-midPx   = (priceHi + priceLo) / 2.0
+// Simple insertion sort by strength descending
+for i = 1 to 7
+    j = i
+    while j > 0 and array.get(strength, array.get(rank, j)) > array.get(strength, array.get(rank, j-1))
+        tmp = array.get(rank, j)
+        array.set(rank, j, array.get(rank, j-1))
+        array.set(rank, j-1, tmp)
+        j := j - 1
 
-plot_eur = midPx + ((array.get(strength, 0) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_usd = midPx + ((array.get(strength, 1) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_gbp = midPx + ((array.get(strength, 2) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_jpy = midPx + ((array.get(strength, 3) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_aud = midPx + ((array.get(strength, 4) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_nzd = midPx + ((array.get(strength, 5) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_cad = midPx + ((array.get(strength, 6) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
-plot_chf = midPx + ((array.get(strength, 7) - relQuote + 50.0) - 50.0) / 50.0 * priceRg * 0.8
+// ===== TABLE (rectangular, bottom-right) =====
+var table tbl = na
+pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
 
-plot(plot_eur, "EUR", color=#2196f3, linewidth=2, style=plot.style_linebr)
-plot(plot_usd, "USD", color=#4caf50, linewidth=2, style=plot.style_linebr)
-plot(plot_gbp, "GBP", color=#ffeb3b, linewidth=2, style=plot.style_linebr)
-plot(plot_jpy, "JPY", color=#f44336, linewidth=2, style=plot.style_linebr)
-plot(plot_aud, "AUD", color=#ff9800, linewidth=2, style=plot.style_linebr)
-plot(plot_nzd, "NZD", color=#8bc34a, linewidth=2, style=plot.style_linebr)
-plot(plot_cad, "CAD", color=#ff5722, linewidth=2, style=plot.style_linebr)
-plot(plot_chf, "CHF", color=#00bcd4, linewidth=2, style=plot.style_linebr)
+if barstate.islast and showTable
+    tbl := table.new(pos, 3, 10, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
+    
+    // Header
+    table.cell(tbl, 0, 0, "CCY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    table.cell(tbl, 1, 0, "SCORE", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    table.cell(tbl, 2, 0, "RANK", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    
+    // 8 currencies sorted by strength
+    for row = 0 to 7
+        idx = array.get(rank, row)
+        c   = array.get(ccy, idx)
+        cColor = array.get(cols, idx)
+        val = array.get(strength, idx)
+        fmt = str.tostring(val, "#" + (decimals > 0 ? "." + str.tostring(decimals, "0".repeat(decimals)) : ""))
+        
+        // Currency label (color-coded)
+        table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        // Score value (black text)
+        table.cell(tbl, 1, row+1, "  " + fmt + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        // Rank (white text)
+        table.cell(tbl, 2, row+1, "  #" + str.tostring(row+1) + "  ", text_color=color.white, text_size=size.small, bgcolor=color.new(#0f0f0f, 95))
 
-// ===== PAIR COMPARISON OVERLAYS (all global scope — fixes CW10003) =====
-plot_gbpusd = request.security("OANDA:GBPUSD", "D", close)
-plot_usdjpy = request.security("OANDA:USDJPY", "D", close)
-plot_audusd = request.security("OANDA:AUDUSD", "D", close)
-plot_nzdusd = request.security("OANDA:NZDUSD", "D", close)
-plot_usdcad = request.security("OANDA:USDCAD", "D", close)
-plot_usdchf = request.security("OANDA:USDCHF", "D", close)
-plot_eurusd = request.security("OANDA:EURUSD", "D", close)
-plot_eurjpy = request.security("OANDA:EURJPY", "D", close)
-
-plot(showCompare ? plot_gbpusd : na, "GBP/USD", color=#ffeb3b, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_usdjpy : na, "USD/JPY", color=#f44336, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_audusd : na, "AUD/USD", color=#ff9800, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_nzdusd : na, "NZD/USD", color=#8bc34a, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_usdcad : na, "USD/CAD", color=#ff5722, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_usdchf : na, "USD/CHF", color=#00bcd4, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_eurusd : na, "EUR/USD", color=#2196f3, linewidth=1, style=plot.style_circles)
-plot(showCompare ? plot_eurjpy : na, "EUR/JPY", color=#f44336, linewidth=1, style=plot.style_circles)
-
-// ===== LEGEND TABLE (bottom-left) =====
-var table leg = table.new(position.bottom_left, 2, 9, border_width=1, border_color=color.new(color.black, 50), frame_width=1, frame_color=color.new(color.black, 50))
-
-if barstate.islast and showLegend
-    table.cell(leg, 0, 0, "0SPOT", text_color=color.white, text_size=size.small, bgcolor=color.new(#1e1e1e, 90))
-    table.cell(leg, 1, 0, "Strength", text_color=color.white, text_size=size.small, bgcolor=color.new(#1e1e1e, 90))
-    for i = 0 to 7
-        c = array.get(ccy, i)
-        cColor = array.get(cols, i)
-        val = array.get(strength, i) - relQuote + 50.0
-        table.cell(leg, 0, i+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#1e1e1e, 90))
-        table.cell(leg, 1, i+1, str.tostring(val, "#.#"), text_color=color.white, text_size=size.small, bgcolor=color.new(#1e1e1e, 90))
+// Clean chart (no plots)
+plot(na)
