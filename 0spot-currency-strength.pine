@@ -130,7 +130,13 @@ if barstate.islast and showTable
         c   = array.get(ccy, idx)
         cColor = array.get(cols, idx)
         val = array.get(strength, idx)
-        fmt = str.tostring(val, "#" + (decimals > 0 ? "." + str.tostring(decimals, "0".repeat(decimals)) : ""))
+        // Build format string without string.repeat (v6 compatible)
+        fmtStr = "#"
+        if decimals > 0
+            fmtStr := fmtStr + "."
+            for k = 0 to decimals - 1
+                fmtStr := fmtStr + "0"
+        fmt = str.tostring(val, fmtStr)
         
         // Currency label (color-coded)
         table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
