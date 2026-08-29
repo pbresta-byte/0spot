@@ -14,7 +14,7 @@ decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
 cols  = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
 
-// ===== PAIRS (28) =====
+// ===== PAIRS (28) - no underscores for OANDA format =====
 pairs = array.from(
     "EURUSD","EURGBP","EURJPY","EURAUD","EURNZD","EURCAD","EURCHF",
     "GBPUSD","GBPJPY","GBPAUD","GBPNZD","GBPCAD","GBPCHF",
@@ -23,9 +23,20 @@ pairs = array.from(
     "NZDUSD","NZDJPY","NZDCAD","NZDCHF",
     "CADJPY","CADCHF","CHFJPY")
 
+// ===== HELPER: add ROC to accumulators =====
+func add_to_acc(acc_arr, cnt_arr, b, q, r) =>
+    bi = array.indexof(ccy, b)
+    qi = array.indexof(ccy, q)
+    if bi >= 0
+        array.set(acc_arr, bi, array.get(acc_arr, bi) + r)
+        array.set(cnt_arr, bi, array.get(cnt_arr, bi) + 1)
+    if qi >= 0
+        array.set(acc_arr, qi, array.get(acc_arr, qi) - r)
+        array.set(cnt_arr, qi, array.get(cnt_arr, qi) + 1)
+
 // ===== MULTI-TIMEFRAME ENGINE =====
 // Returns array of 8 strength values for given timeframe
-f_compute_strength(tf) =>
+func compute_strength(tf) =>
     var float[] acc_tf = array.new_float(8, 0.0)
     var int[]   cnt_tf = array.new_int(8, 0)
     
@@ -33,16 +44,6 @@ f_compute_strength(tf) =>
     for i = 0 to 7
         array.set(acc_tf, i, 0.0)
         array.set(cnt_tf, i, 0)
-    
-    f_add_tf(b, q, r) =>
-        bi = array.indexof(ccy, b)
-        qi = array.indexof(ccy, q)
-        if bi >= 0
-            array.set(acc_tf, bi, array.get(acc_tf, bi) + r)
-            array.set(cnt_tf, bi, array.get(cnt_tf, bi) + 1)
-        if qi >= 0
-            array.set(acc_tf, qi, array.get(acc_tf, qi) - r)
-            array.set(cnt_tf, qi, array.get(cnt_tf, qi) + 1)
     
     // 28 ROC calls at global scope via request.security
     r0  = request.security("OANDA:EURUSD",  tf, ta.roc(close, 14))
@@ -74,52 +75,47 @@ f_compute_strength(tf) =>
     r26 = request.security("OANDA:CADCHF",  tf, ta.roc(close, 14))
     r27 = request.security("OANDA:CHFJPY",  tf, ta.roc(close, 14))
     
-    f_add_tf("EUR", "USD", r0)
-    f_add_tf("EUR", "GBP", r1)
-    f_add_tf("EUR", "JPY", r2)
-    f_add_tf("EUR", "AUD", r3)
-    f_add_tf("EUR", "NZD", r4)
-    f_add_tf("EUR", "CAD", r5)
-    f_add_tf("EUR", "CHF", r6)
-    f_add_tf("GBP", "USD", r7)
-    f_add_tf("GBP", "JPY", r8)
-    f_add_tf("GBP", "AUD", r9)
-    f_add_tf("GBP", "NZD", r10)
-    f_add_tf("GBP", "CAD", r11)
-    f_add_tf("GBP", "CHF", r12)
-    f_add_tf("USD", "JPY", r13)
-    f_add_tf("USD", "CHF", r14)
-    f_add_tf("USD", "CAD", r15)
-    f_add_tf("AUD", "USD", r16)
-    f_add_tf("AUD", "JPY", r17)
-    f_add_tf("AUD", "CAD", r18)
-    f_add_tf("AUD", "CHF", r19)
-    f_add_tf("AUD", "NZD", r20)
-    f_add_tf("NZD", "USD", r21)
-    f_add_tf("NZD", "JPY", r22)
-    f_add_tf("NZD", "CAD", r23)
-    f_add_tf("NZD", "CHF", r24)
-    f_add_tf("CAD", "JPY", r25)
-    f_add_tf("CAD", "CHF", r26)
-    f_add_tf("CHF", "JPY", r27)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "USD", r0)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "GBP", r1)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "JPY", r2)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "AUD", r3)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "NZD", r4)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "CAD", r5)
+    add_to_acc(acc_tf, cnt_tf, "EUR", "CHF", r6)
+    add_to_acc(acc_tf, cnt_tf, "GBP", "USD", r7)
+    add_to_acc(acc_tf, cnt_tf, "GBP", "JPY", r8)
+    add_to_acc(acc_tf, cnt_tf, "GBP", "AUD", r9)
+    add_to_acc(acc_tf, cnt_tf, "GBP", "NZD", r10)
+    add_to_acc(acc_tf, cnt_tf, "GBP", "CAD", r11)
+    add_to_acc(acc_tf, cnt_tf, "GBP", "CHF", r12)
+    add_to_acc(acc_tf, cnt_tf, "USD", "JPY", r13)
+    add_to_acc(acc_tf, cnt_tf, "USD", "CHF", r14)
+    add_to_acc(acc_tf, cnt_tf, "USD", "CAD", r15)
+    add_to_acc(acc_tf, cnt_tf, "AUD", "USD", r16)
+    add_to_acc(acc_tf, cnt_tf, "AUD", "JPY", r17)
+    add_to_acc(acc_tf, cnt_tf, "AUD", "CAD", r18)
+    add_to_acc(acc_tf, cnt_tf, "AUD", "CHF", r19)
+    add_to_acc(acc_tf, cnt_tf, "AUD", "NZD", r20)
+    add_to_acc(acc_tf, cnt_tf, "NZD", "USD", r21)
+    add_to_acc(acc_tf, cnt_tf, "NZD", "JPY", r22)
+    add_to_acc(acc_tf, cnt_tf, "NZD", "CAD", r23)
+    add_to_acc(acc_tf, cnt_tf, "NZD", "CHF", r24)
+    add_to_acc(acc_tf, cnt_tf, "CAD", "JPY", r25)
+    add_to_acc(acc_tf, cnt_tf, "CAD", "CHF", r26)
+    add_to_acc(acc_tf, cnt_tf, "CHF", "JPY", r27)
     
     // Normalize 0-100
     var float[] strength_tf = array.new_float(8, 50.0)
     alpha = 2.0 / 6.0
     for i = 0 to 7
-        avg = cnt_tf.get(i) > 0 ? acc_tf.get(i) / cnt_tf.get(i) : 0.0
+        avg = array.get(cnt_tf, i) > 0 ? array.get(acc_tf, i) / array.get(cnt_tf, i) : 0.0
         inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
         array.set(strength_tf, i, array.get(strength_tf, i) + alpha * (inst - array.get(strength_tf, i)))
     
     array.copy(strength_tf)
 
-// Compute for D, W, M
-strength_D = f_compute_strength("D")
-strength_W = f_compute_strength("W")
-strength_M = f_compute_strength("M")
-
-// ===== BUILD RANKING FOR EACH TIMEFRAME =====
-f_rank(str_arr) =>
+// ===== RANKING =====
+func rank_currencies(str_arr) =>
     var int[] r = array.new_int(8, 0)
     for i = 0 to 7
         array.set(r, i, i)
@@ -132,16 +128,20 @@ f_rank(str_arr) =>
             j := j - 1
     array.copy(r)
 
-rank_D = f_rank(strength_D)
-rank_W = f_rank(strength_W)
-rank_M = f_rank(strength_M)
+// Compute for D, W, M
+strength_D = compute_strength("D")
+strength_W = compute_strength("W")
+strength_M = compute_strength("M")
+
+rank_D = rank_currencies(strength_D)
+rank_W = rank_currencies(strength_W)
+rank_M = rank_currencies(strength_M)
 
 // ===== TABLE (rectangular, bottom-right) =====
 var table tbl = na
 pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
 
 if barstate.islast and showTable
-    // 5 columns: CCY | D | W | M | AVG RANK
     tbl := table.new(pos, 5, 10, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
     
     // Header
@@ -152,12 +152,11 @@ if barstate.islast and showTable
     table.cell(tbl, 4, 0, "AVG RANK", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
     
     for row = 0 to 7
-        // Use Daily ranking for sort order
         idx = array.get(rank_D, row)
         c   = array.get(ccy, idx)
         cColor = array.get(cols, idx)
         
-        // Format values
+        // Format string
         fmtStr = "#"
         if decimals > 0
             fmtStr := fmtStr + "."
