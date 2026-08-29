@@ -13,7 +13,8 @@ decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
 
 // ===== 8 MAJORS =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
-cols  = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
+// Theme-agnostic colors (work on both light/dark backgrounds, all distinct)
+cols  = array.from(#1565c0, #2e7d32, #c62828, #ad1457, #e65100, #00838f, #4a148c, #00695c)
 
 // ===== PAIRS (13) - major liquid pairs only, no underscores for OANDA format =====
 pairs = array.from(
@@ -147,23 +148,23 @@ if barstate.islast and showTable
         dDW = str.tostring(array.get(strength_W, idx) - array.get(strength_D, idx), "+#.##;-#.##")
         dWM = str.tostring(array.get(strength_M, idx) - array.get(strength_W, idx), "+#.##;-#.##")
         
-        // Currency label (color-coded)
-        table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        // Currency label (color-coded background, white text for visibility)
+        table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=color.white, text_size=size.normal, bgcolor=color.new(cColor, 40))
         // Daily (black text on colored bg)
-        table.cell(tbl, 1, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        table.cell(tbl, 1, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 25))
         // Weekly
-        table.cell(tbl, 2, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        table.cell(tbl, 2, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 25))
         // Monthly
-        table.cell(tbl, 3, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        table.cell(tbl, 3, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 25))
         // Rank
         table.cell(tbl, 4, row+1, "  " + rD + "  ", text_color=color.white, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
         // Deltas
         if showDelta
             // D→W delta - green if improving, red if declining
-            dwColor = (array.get(strength_W, idx) - array.get(strength_D, idx)) >= 0 ? color.new(#4caf50, 0) : color.new(#f44336, 0)
+            dwColor = (array.get(strength_W, idx) - array.get(strength_D, idx)) >= 0 ? color.new(#2e7d32, 0) : color.new(#c62828, 0)
             table.cell(tbl, 5, row+1, "  " + dDW + "  ", text_color=dwColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
             // W→M delta
-            wmColor = (array.get(strength_M, idx) - array.get(strength_W, idx)) >= 0 ? color.new(#4caf50, 0) : color.new(#f44336, 0)
+            wmColor = (array.get(strength_M, idx) - array.get(strength_W, idx)) >= 0 ? color.new(#2e7d32, 0) : color.new(#c62828, 0)
             table.cell(tbl, 6, row+1, "  " + dWM + "  ", text_color=wmColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
 
 // Clean chart (no plots)
