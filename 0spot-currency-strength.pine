@@ -9,15 +9,15 @@ indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines
 strengthTF    = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M"])
 showLegend    = input.bool(true, "Show Legend (bottom-left)")
 
-// ===== 8 MAJORS + 28 PAIRS (OANDA format) =====
+// ===== 8 MAJORS + 28 PAIRS (OANDA format WITH underscores) =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
 pairs = array.from(
-    "EURUSD","EURGBP","EURJPY","EURAUD","EURNZD","EURCAD","EURCHF",
-    "GBPUSD","GBPJPY","GBPAUD","GBPNZD","GBPCAD","GBPCHF",
-    "USDJPY","USDCHF","USDCAD",
-    "AUDUSD","AUDJPY","AUDCAD","AUDCHF","AUDNZD",
-    "NZDUSD","NZDJPY","NZDCAD","NZDCHF",
-    "CADJPY","CADCHF","CHFJPY")
+    "EUR_USD","EUR_GBP","EUR_JPY","EUR_AUD","EUR_NZD","EUR_CAD","EUR_CHF",
+    "GBP_USD","GBP_JPY","GBP_AUD","GBP_NZD","GBP_CAD","GBP_CHF",
+    "USD_JPY","USD_CHF","USD_CAD",
+    "AUD_USD","AUD_JPY","AUD_CAD","AUD_CHF","AUD_NZD",
+    "NZD_USD","NZD_JPY","NZD_CAD","NZD_CHF",
+    "CAD_JPY","CAD_CHF","CHF_JPY")
 
 // ===== COLORS (EUR=blue, USD=green, GBP=yellow, JPY=red, AUD=orange, NZD=lightgreen, CAD=deeporange, CHF=cyan) =====
 cols = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
@@ -37,35 +37,35 @@ f_add(b, q, r) =>
         array.set(cnt, qi, array.get(cnt, qi) + 1)
 
 // ===== ROC ENGINE — inline security calls at global scope (fixes CW10003) =====
-// 28 pairs, each request.security at global scope
-r0  = request.security("OANDA:EURUSD",  strengthTF, ta.roc(close, 14))
-r1  = request.security("OANDA:EURGBP",  strengthTF, ta.roc(close, 14))
-r2  = request.security("OANDA:EURJPY",  strengthTF, ta.roc(close, 14))
-r3  = request.security("OANDA:EURAUD",  strengthTF, ta.roc(close, 14))
-r4  = request.security("OANDA:EURNZD",  strengthTF, ta.roc(close, 14))
-r5  = request.security("OANDA:EURCAD",  strengthTF, ta.roc(close, 14))
-r6  = request.security("OANDA:EURCHF",  strengthTF, ta.roc(close, 14))
-r7  = request.security("OANDA:GBPUSD",  strengthTF, ta.roc(close, 14))
-r8  = request.security("OANDA:GBPJPY",  strengthTF, ta.roc(close, 14))
-r9  = request.security("OANDA:GBPAUD",  strengthTF, ta.roc(close, 14))
-r10 = request.security("OANDA:GBPNZD",  strengthTF, ta.roc(close, 14))
-r11 = request.security("OANDA:GBPCAD",  strengthTF, ta.roc(close, 14))
-r12 = request.security("OANDA:GBPCHF",  strengthTF, ta.roc(close, 14))
-r13 = request.security("OANDA:USDJPY",  strengthTF, ta.roc(close, 14))
-r14 = request.security("OANDA:USDCHF",  strengthTF, ta.roc(close, 14))
-r15 = request.security("OANDA:USDCAD",  strengthTF, ta.roc(close, 14))
-r16 = request.security("OANDA:AUDUSD",  strengthTF, ta.roc(close, 14))
-r17 = request.security("OANDA:AUDJPY",  strengthTF, ta.roc(close, 14))
-r18 = request.security("OANDA:AUDCAD",  strengthTF, ta.roc(close, 14))
-r19 = request.security("OANDA:AUDCHF",  strengthTF, ta.roc(close, 14))
-r20 = request.security("OANDA:AUDNZD",  strengthTF, ta.roc(close, 14))
-r21 = request.security("OANDA:NZDUSD",  strengthTF, ta.roc(close, 14))
-r22 = request.security("OANDA:NZDJPY",  strengthTF, ta.roc(close, 14))
-r23 = request.security("OANDA:NZDCAD",  strengthTF, ta.roc(close, 14))
-r24 = request.security("OANDA:NZDCHF",  strengthTF, ta.roc(close, 14))
-r25 = request.security("OANDA:CADJPY",  strengthTF, ta.roc(close, 14))
-r26 = request.security("OANDA:CADCHF",  strengthTF, ta.roc(close, 14))
-r27 = request.security("OANDA:CHFJPY",  strengthTF, ta.roc(close, 14))
+// 28 pairs, each request.security at global scope with OANDA:PAIR format
+r0  = request.security("OANDA:EUR_USD",  strengthTF, ta.roc(close, 14))
+r1  = request.security("OANDA:EUR_GBP",  strengthTF, ta.roc(close, 14))
+r2  = request.security("OANDA:EUR_JPY",  strengthTF, ta.roc(close, 14))
+r3  = request.security("OANDA:EUR_AUD",  strengthTF, ta.roc(close, 14))
+r4  = request.security("OANDA:EUR_NZD",  strengthTF, ta.roc(close, 14))
+r5  = request.security("OANDA:EUR_CAD",  strengthTF, ta.roc(close, 14))
+r6  = request.security("OANDA:EUR_CHF",  strengthTF, ta.roc(close, 14))
+r7  = request.security("OANDA:GBP_USD",  strengthTF, ta.roc(close, 14))
+r8  = request.security("OANDA:GBP_JPY",  strengthTF, ta.roc(close, 14))
+r9  = request.security("OANDA:GBP_AUD",  strengthTF, ta.roc(close, 14))
+r10 = request.security("OANDA:GBP_NZD",  strengthTF, ta.roc(close, 14))
+r11 = request.security("OANDA:GBP_CAD",  strengthTF, ta.roc(close, 14))
+r12 = request.security("OANDA:GBP_CHF",  strengthTF, ta.roc(close, 14))
+r13 = request.security("OANDA:USD_JPY",  strengthTF, ta.roc(close, 14))
+r14 = request.security("OANDA:USD_CHF",  strengthTF, ta.roc(close, 14))
+r15 = request.security("OANDA:USD_CAD",  strengthTF, ta.roc(close, 14))
+r16 = request.security("OANDA:AUD_USD",  strengthTF, ta.roc(close, 14))
+r17 = request.security("OANDA:AUD_JPY",  strengthTF, ta.roc(close, 14))
+r18 = request.security("OANDA:AUD_CAD",  strengthTF, ta.roc(close, 14))
+r19 = request.security("OANDA:AUD_CHF",  strengthTF, ta.roc(close, 14))
+r20 = request.security("OANDA:AUD_NZD",  strengthTF, ta.roc(close, 14))
+r21 = request.security("OANDA:NZD_USD",  strengthTF, ta.roc(close, 14))
+r22 = request.security("OANDA:NZD_JPY",  strengthTF, ta.roc(close, 14))
+r23 = request.security("OANDA:NZD_CAD",  strengthTF, ta.roc(close, 14))
+r24 = request.security("OANDA:NZD_CHF",  strengthTF, ta.roc(close, 14))
+r25 = request.security("OANDA:CAD_JPY",  strengthTF, ta.roc(close, 14))
+r26 = request.security("OANDA:CAD_CHF",  strengthTF, ta.roc(close, 14))
+r27 = request.security("OANDA:CHF_JPY",  strengthTF, ta.roc(close, 14))
 
 // Feed accumulators
 f_add("EUR", "USD", r0);  f_add("EUR", "GBP", r1);  f_add("EUR", "JPY", r2);  f_add("EUR", "AUD", r3)
@@ -86,12 +86,16 @@ for i = 0 to 7
     inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
     array.set(strength, i, array.get(strength, i) + alpha * (inst - array.get(strength, i)))
 
-// ===== RELATIVE TO CHART'S QUOTE CURRENCY =====
-quoteC = str.replace_all(syminfo.ticker, syminfo.basecurrency, "")
+// ===== RELATIVE TO CHART'S QUOTE CURRENCY (FIXED) =====
+// syminfo.ticker for OANDA:EUR_USD = "OANDA:EUR_USD", syminfo.basecurrency = "EUR"
+// Extract quote by removing "OANDA:" + base + "_"
+chartPair = str.replace_all(syminfo.ticker, "OANDA:", "")
+baseC = syminfo.basecurrency
+quoteC = str.replace_all(chartPair, baseC + "_", "")
 qIdx   = array.indexof(ccy, quoteC)
 relQuote = qIdx >= 0 ? array.get(strength, qIdx) : 50.0
 
-// ===== PLOT 8 LINES ON MAIN CHART (no title parameter = fixes CE10123) =====
+// ===== PLOT 8 LINES ON MAIN CHART (const string titles = fixes CE10123) =====
 priceHi = high
 priceLo = low
 priceRg = priceHi - priceLo
