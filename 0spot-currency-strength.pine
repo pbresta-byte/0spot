@@ -8,6 +8,7 @@ indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines
 // ===== INPUTS =====
 strengthTF    = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M"])
 showLegend    = input.bool(true, "Show Legend (bottom-left)")
+showCompare   = input.bool(false, "Show Pair Comparison Overlays")
 
 // ===== 8 MAJORS + 28 PAIRS (OANDA format WITH underscores) =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
@@ -36,8 +37,7 @@ f_add(b, q, r) =>
         array.set(acc, qi, array.get(acc, qi) - r)
         array.set(cnt, qi, array.get(cnt, qi) + 1)
 
-// ===== ROC ENGINE — inline security calls at global scope (fixes CW10003) =====
-// 28 pairs, each request.security at global scope with OANDA:PAIR format
+// ===== ROC ENGINE (global scope) =====
 r0  = request.security("OANDA:EUR_USD",  strengthTF, ta.roc(close, 14))
 r1  = request.security("OANDA:EUR_GBP",  strengthTF, ta.roc(close, 14))
 r2  = request.security("OANDA:EUR_JPY",  strengthTF, ta.roc(close, 14))
@@ -67,15 +67,33 @@ r25 = request.security("OANDA:CAD_JPY",  strengthTF, ta.roc(close, 14))
 r26 = request.security("OANDA:CAD_CHF",  strengthTF, ta.roc(close, 14))
 r27 = request.security("OANDA:CHF_JPY",  strengthTF, ta.roc(close, 14))
 
-// Feed accumulators
-f_add("EUR", "USD", r0);  f_add("EUR", "GBP", r1);  f_add("EUR", "JPY", r2);  f_add("EUR", "AUD", r3)
-f_add("EUR", "NZD", r4);  f_add("EUR", "CAD", r5);  f_add("EUR", "CHF", r6)
-f_add("GBP", "USD", r7);  f_add("GBP", "JPY", r8);  f_add("GBP", "AUD", r9);  f_add("GBP", "NZD", r10)
-f_add("GBP", "CAD", r11); f_add("GBP", "CHF", r12)
-f_add("USD", "JPY", r13); f_add("USD", "CHF", r14); f_add("USD", "CAD", r15)
-f_add("AUD", "USD", r16); f_add("AUD", "JPY", r17); f_add("AUD", "CAD", r18); f_add("AUD", "CHF", r19); f_add("AUD", "NZD", r20)
-f_add("NZD", "USD", r21); f_add("NZD", "JPY", r22); f_add("NZD", "CAD", r23); f_add("NZD", "CHF", r24)
-f_add("CAD", "JPY", r25); f_add("CAD", "CHF", r26)
+f_add("EUR", "USD", r0)
+f_add("EUR", "GBP", r1)
+f_add("EUR", "JPY", r2)
+f_add("EUR", "AUD", r3)
+f_add("EUR", "NZD", r4)
+f_add("EUR", "CAD", r5)
+f_add("EUR", "CHF", r6)
+f_add("GBP", "USD", r7)
+f_add("GBP", "JPY", r8)
+f_add("GBP", "AUD", r9)
+f_add("GBP", "NZD", r10)
+f_add("GBP", "CAD", r11)
+f_add("GBP", "CHF", r12)
+f_add("USD", "JPY", r13)
+f_add("USD", "CHF", r14)
+f_add("USD", "CAD", r15)
+f_add("AUD", "USD", r16)
+f_add("AUD", "JPY", r17)
+f_add("AUD", "CAD", r18)
+f_add("AUD", "CHF", r19)
+f_add("AUD", "NZD", r20)
+f_add("NZD", "USD", r21)
+f_add("NZD", "JPY", r22)
+f_add("NZD", "CAD", r23)
+f_add("NZD", "CHF", r24)
+f_add("CAD", "JPY", r25)
+f_add("CAD", "CHF", r26)
 f_add("CHF", "JPY", r27)
 
 // ===== NORMALIZE 0-100 (EMA smoothed, centered at 50) =====
@@ -86,16 +104,14 @@ for i = 0 to 7
     inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
     array.set(strength, i, array.get(strength, i) + alpha * (inst - array.get(strength, i)))
 
-// ===== RELATIVE TO CHART'S QUOTE CURRENCY (FIXED) =====
-// syminfo.ticker for OANDA:EUR_USD = "OANDA:EUR_USD", syminfo.basecurrency = "EUR"
-// Extract quote by removing "OANDA:" + base + "_"
+// ===== RELATIVE TO CHART'S QUOTE CURRENCY =====
 chartPair = str.replace_all(syminfo.ticker, "OANDA:", "")
 baseC = syminfo.basecurrency
 quoteC = str.replace_all(chartPair, baseC + "_", "")
 qIdx   = array.indexof(ccy, quoteC)
 relQuote = qIdx >= 0 ? array.get(strength, qIdx) : 50.0
 
-// ===== PLOT 8 LINES ON MAIN CHART (const string titles = fixes CE10123) =====
+// ===== PLOT 8 STRENGTH LINES ON CHART =====
 priceHi = high
 priceLo = low
 priceRg = priceHi - priceLo
@@ -118,6 +134,36 @@ plot(plot_aud, "AUD", color=#ff9800, linewidth=2, style=plot.style_linebr)
 plot(plot_nzd, "NZD", color=#8bc34a, linewidth=2, style=plot.style_linebr)
 plot(plot_cad, "CAD", color=#ff5722, linewidth=2, style=plot.style_linebr)
 plot(plot_chf, "CHF", color=#00bcd4, linewidth=2, style=plot.style_linebr)
+
+// ===== PAIR COMPARISON OVERLAYS (toggleable) =====
+// Plots actual pair price normalized to chart range for visual comparison vs strength
+plot_gbpusd = na
+plot_usdjpy = na
+plot_audusd = na
+plot_nzdusd = na
+plot_usdcad = na
+plot_usdchf = na
+plot_eurusd = na
+plot_eurjpy = na
+
+if showCompare
+    plot_gbpusd := request.security("OANDA:GBP_USD", "D", close)
+    plot_usdjpy := request.security("OANDA:USD_JPY", "D", close)
+    plot_audusd := request.security("OANDA:AUD_USD", "D", close)
+    plot_nzdusd := request.security("OANDA:NZD_USD", "D", close)
+    plot_usdcad := request.security("OANDA:USD_CAD", "D", close)
+    plot_usdchf := request.security("OANDA:USD_CHF", "D", close)
+    plot_eurusd := request.security("OANDA:EUR_USD", "D", close)
+    plot_eurjpy := request.security("OANDA:EUR_JPY", "D", close)
+
+plot(showCompare ? plot_gbpusd : na, "GBP/USD", color=#ffeb3b, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_usdjpy : na, "USD/JPY", color=#f44336, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_audusd : na, "AUD/USD", color=#ff9800, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_nzdusd : na, "NZD/USD", color=#8bc34a, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_usdcad : na, "USD/CAD", color=#ff5722, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_usdchf : na, "USD/CHF", color=#00bcd4, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_eurusd : na, "EUR/USD", color=#2196f3, linewidth=1, style=plot.style_circles)
+plot(showCompare ? plot_eurjpy : na, "EUR/JPY", color=#f44336, linewidth=1, style=plot.style_circles)
 
 // ===== LEGEND TABLE (bottom-left) =====
 var table leg = table.new(position.bottom_left, 2, 9, border_width=1, border_color=color.new(color.black, 50), frame_width=1, frame_color=color.new(color.black, 50))
