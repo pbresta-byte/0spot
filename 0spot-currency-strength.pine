@@ -3,7 +3,7 @@
 // 8 majors, 28 OANDA pairs, 0-100 relative strength across D/W/M
 // Rectangular table bottom-right, black text values, color-coded currency labels
 
-indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=false, max_lines_count=500)
+indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines_count=500)
 
 // ===== INPUTS =====
 showTable     = input.bool(true, "Show Strength Table")
@@ -24,7 +24,7 @@ pairs = array.from(
     "CADJPY","CADCHF","CHFJPY")
 
 // ===== HELPER: add ROC to accumulators =====
-func add_to_acc(acc_arr, cnt_arr, b, q, r) =>
+add_to_acc(acc_arr, cnt_arr, b, q, r) =>
     bi = array.indexof(ccy, b)
     qi = array.indexof(ccy, q)
     if bi >= 0
@@ -36,7 +36,7 @@ func add_to_acc(acc_arr, cnt_arr, b, q, r) =>
 
 // ===== MULTI-TIMEFRAME ENGINE =====
 // Returns array of 8 strength values for given timeframe
-func compute_strength(tf) =>
+compute_strength(tf) =>
     var float[] acc_tf = array.new_float(8, 0.0)
     var int[]   cnt_tf = array.new_int(8, 0)
     
@@ -115,7 +115,7 @@ func compute_strength(tf) =>
     array.copy(strength_tf)
 
 // ===== RANKING =====
-func rank_currencies(str_arr) =>
+rank_currencies(str_arr) =>
     var int[] r = array.new_int(8, 0)
     for i = 0 to 7
         array.set(r, i, i)
