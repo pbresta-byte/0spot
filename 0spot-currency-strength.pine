@@ -10,18 +10,9 @@ strengthTF    = input.timeframe("D", "Strength Timeframe", options=["D", "W", "M
 showLegend    = input.bool(true, "Show Legend (bottom-left)")
 showCompare   = input.bool(false, "Show Pair Comparison Overlays")
 
-// ===== 8 MAJORS + 28 PAIRS (OANDA format WITH underscores) =====
+// ===== 8 MAJORS =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
-pairs = array.from(
-    "EUR_USD","EUR_GBP","EUR_JPY","EUR_AUD","EUR_NZD","EUR_CAD","EUR_CHF",
-    "GBP_USD","GBP_JPY","GBP_AUD","GBP_NZD","GBP_CAD","GBP_CHF",
-    "USD_JPY","USD_CHF","USD_CAD",
-    "AUD_USD","AUD_JPY","AUD_CAD","AUD_CHF","AUD_NZD",
-    "NZD_USD","NZD_JPY","NZD_CAD","NZD_CHF",
-    "CAD_JPY","CAD_CHF","CHF_JPY")
-
-// ===== COLORS (EUR=blue, USD=green, GBP=yellow, JPY=red, AUD=orange, NZD=lightgreen, CAD=deeporange, CHF=cyan) =====
-cols = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
+cols  = array.from(#2196f3, #4caf50, #ffeb3b, #f44336, #ff9800, #8bc34a, #ff5722, #00bcd4)
 
 // ===== ACCUMULATORS =====
 acc = array.new_float(8, 0.0)
@@ -37,7 +28,7 @@ f_add(b, q, r) =>
         array.set(acc, qi, array.get(acc, qi) - r)
         array.set(cnt, qi, array.get(cnt, qi) + 1)
 
-// ===== ROC ENGINE (global scope) =====
+// ===== ROC ENGINE (all 28 at global scope — fixes CW10003) =====
 r0  = request.security("OANDA:EUR_USD",  strengthTF, ta.roc(close, 14))
 r1  = request.security("OANDA:EUR_GBP",  strengthTF, ta.roc(close, 14))
 r2  = request.security("OANDA:EUR_JPY",  strengthTF, ta.roc(close, 14))
@@ -67,6 +58,7 @@ r25 = request.security("OANDA:CAD_JPY",  strengthTF, ta.roc(close, 14))
 r26 = request.security("OANDA:CAD_CHF",  strengthTF, ta.roc(close, 14))
 r27 = request.security("OANDA:CHF_JPY",  strengthTF, ta.roc(close, 14))
 
+// Feed accumulators (global scope — fixes CE10005)
 f_add("EUR", "USD", r0)
 f_add("EUR", "GBP", r1)
 f_add("EUR", "JPY", r2)
@@ -135,26 +127,15 @@ plot(plot_nzd, "NZD", color=#8bc34a, linewidth=2, style=plot.style_linebr)
 plot(plot_cad, "CAD", color=#ff5722, linewidth=2, style=plot.style_linebr)
 plot(plot_chf, "CHF", color=#00bcd4, linewidth=2, style=plot.style_linebr)
 
-// ===== PAIR COMPARISON OVERLAYS (toggleable) =====
-// Plots actual pair price normalized to chart range for visual comparison vs strength
-plot_gbpusd = na
-plot_usdjpy = na
-plot_audusd = na
-plot_nzdusd = na
-plot_usdcad = na
-plot_usdchf = na
-plot_eurusd = na
-plot_eurjpy = na
-
-if showCompare
-    plot_gbpusd := request.security("OANDA:GBP_USD", "D", close)
-    plot_usdjpy := request.security("OANDA:USD_JPY", "D", close)
-    plot_audusd := request.security("OANDA:AUD_USD", "D", close)
-    plot_nzdusd := request.security("OANDA:NZD_USD", "D", close)
-    plot_usdcad := request.security("OANDA:USD_CAD", "D", close)
-    plot_usdchf := request.security("OANDA:USD_CHF", "D", close)
-    plot_eurusd := request.security("OANDA:EUR_USD", "D", close)
-    plot_eurjpy := request.security("OANDA:EUR_JPY", "D", close)
+// ===== PAIR COMPARISON OVERLAYS (all global scope — fixes CW10003) =====
+plot_gbpusd = request.security("OANDA:GBP_USD", "D", close)
+plot_usdjpy = request.security("OANDA:USD_JPY", "D", close)
+plot_audusd = request.security("OANDA:AUD_USD", "D", close)
+plot_nzdusd = request.security("OANDA:NZD_USD", "D", close)
+plot_usdcad = request.security("OANDA:USD_CAD", "D", close)
+plot_usdchf = request.security("OANDA:USD_CHF", "D", close)
+plot_eurusd = request.security("OANDA:EUR_USD", "D", close)
+plot_eurjpy = request.security("OANDA:EUR_JPY", "D", close)
 
 plot(showCompare ? plot_gbpusd : na, "GBP/USD", color=#ffeb3b, linewidth=1, style=plot.style_circles)
 plot(showCompare ? plot_usdjpy : na, "USD/JPY", color=#f44336, linewidth=1, style=plot.style_circles)
