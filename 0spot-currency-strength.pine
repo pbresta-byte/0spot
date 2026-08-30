@@ -54,7 +54,10 @@ compute_strength(tf, pctLB) =>
     var float[] strength   = array.new_float(8, 50.0)
     var float[] prev_str   = array.new_float(8, 50.0)
     var float[] momentum   = array.new_float(8, 0.0)
-    var history            = array.new_array(8, array.new_float(0))
+    var history            = array.new_float(8, na)
+    // Initialize history as array of arrays
+    for i = 0 to 7
+        array.set(history, i, array.new_float(0))
     
     // Reset accumulators each bar
     for i = 0 to 7
@@ -158,8 +161,8 @@ calc_confluence(str_D, str_W, str_M) =>
         dir_score = (bull + bear) * 50.0  // 0, 50, or 100
         
         // Magnitude alignment: inverse of pairwise variance
-        var = math.pow(d - w, 2) + math.pow(w - m, 2) + math.pow(d - m, 2)
-        mag_score = math.max(0.0, 100.0 - var * 0.5)  // 0-100, higher = more aligned
+        pairwise_var = math.pow(d - w, 2) + math.pow(w - m, 2) + math.pow(d - m, 2)
+        mag_score = math.max(0.0, 100.0 - pairwise_var * 0.5)  // 0-100, higher = more aligned
         
         // Composite: 50% direction, 50% magnitude
         array.set(conf, i, dir_score * 0.5 + mag_score * 0.5)
