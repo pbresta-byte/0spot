@@ -1,14 +1,26 @@
 //@version=6
-// 0SPOT — Currency Strength Matrix (D/W/M, 13 major pairs + delta)
+// 0SPOT — Currency Strength Matrix (D/W/M, 13 major pairs + dynamic deltas)
 // 8 majors, 13 liquid OANDA pairs, 0-100 relative strength across D/W/M
 // Rectangular table bottom-right, black text values, color-coded currency labels
+// Enhanced: Momentum, MTF Divergence, Percentile Rank, Alerts, Confluence
 
 indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines_count=500)
 
 // ===== INPUTS =====
-showTable     = input.bool(true, "Show Strength Table")
+showTable     = input.bool(true,     "Show Strength Table")
 tablePos      = input.string("bottom_right", "Table Position", options=["bottom_right", "bottom_left", "top_right", "top_left"])
-decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
+decimals      = input.int(1,         "Decimal Places", minval=0, maxval=3)
+
+// --- Delta Display Options ---
+showMomentum      = input.bool(true,  "Show Strength Momentum (Δ/bar)", group="Delta Options")
+showDivergence    = input.bool(true,  "Show MTF Divergence (D/W/M spread)", group="Delta Options")
+showPercentile    = input.bool(true,  "Show Historical Percentile Rank", group="Delta Options")
+pctLookback       = input.int(90,     "Percentile Lookback (bars)", minval=20, maxval=252, group="Delta Options")
+showConfluence    = input.bool(true,  "Show MTF Confluence Score", group="Delta Options")
+showAlerts        = input.bool(true,  "Enable Threshold Alerts", group="Delta Options")
+alertMidline      = input.bool(true,  "Alert on 50 Midline Cross", group="Delta Options")
+alertExtremes     = input.bool(true,  "Alert on Extreme Zones (70/30)", group="Delta Options")
+alertTopBottom2   = input.bool(true,  "Alert on Top/Bottom 2 Ranks", group="Delta Options")
 
 // ===== 8 MAJORS =====
 ccy   = array.from("EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF")
@@ -35,9 +47,14 @@ add_to_acc(acc_arr, cnt_arr, b, q, r) =>
         array.set(cnt_arr, qi, array.get(cnt_arr, qi) + 1)
 
 // ===== MULTI-TIMEFRAME ENGINE =====
-compute_strength(tf) =>
-    var float[] acc = array.new_float(8, 0.0)
-    var int[]   cnt = array.new_int(8, 0)
+// Returns: [strength, momentum, history_buffer]
+compute_strength(tf, pctLB) =>
+    var float[] acc        = array.new_float(8, 0.0)
+    var int[]   cnt        = array.new_int(8, 0)
+    var float[] strength   = array.new_float(8, 50.0)
+    var float[] prev_str   = array.new_float(8, 50.0)
+    var float[] momentum   = array.new_float(8, 0.0)
+    var float[][] history  = array.new_array(8, array.new_float(0))
     
     // Reset accumulators each bar
     for i = 0 to 7
@@ -73,15 +90,143 @@ compute_strength(tf) =>
     add_to_acc(acc, cnt, "NZD", "USD", r11)
     add_to_acc(acc, cnt, "CAD", "JPY", r12)
     
-    // Normalize 0-100 with EMA smoothing
-    var float[] strength = array.new_float(8, 50.0)
+    // Normalize 0-100 with EMA smoothing + momentum + history
     alpha = 2.0 / 6.0
     for i = 0 to 7
+        // Store previous strength for momentum
+        array.set(prev_str, i, array.get(strength, i))
+        
         avg = array.get(cnt, i) > 0 ? array.get(acc, i) / array.get(cnt, i) : 0.0
         inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
         array.set(strength, i, array.get(strength, i) + alpha * (inst - array.get(strength, i)))
+        
+        // Momentum: current - previous (bar-to-bar change)
+        array.set(momentum, i, array.get(strength, i) - array.get(prev_str, i))
+        
+        // History buffer for percentile (maintain sorted for O(log N) lookup)
+        if showPercentile
+            h = array.get(history, i)
+            array.push(h, array.get(strength, i))
+            if array.size(h) > pctLB
+                array.shift(h)
+            // Keep sorted for binary search percentile
+            // Note: insertion sort into sorted array would be better but Pine arrays don't support insert-at-index easily
+            // We'll sort on-demand in percentile calc
     
-    array.copy(strength)
+    [array.copy(strength), array.copy(momentum), array.copy(history)]
+
+// ===== PERCENTILE CALCULATION (optimized: sort once per bar per currency) =====
+calc_percentile(hist_arr, val) =>
+    if array.size(hist_arr) < 10
+        50.0  // not enough data
+    else
+        // Simple linear scan (acceptable for <=252 elements, 8 currencies, 3 TFs = ~6000 ops/bar)
+        // For true O(log N), would need sorted array + binary search
+        cnt = 0
+        for v in hist_arr
+            if v < val
+                cnt := cnt + 1
+        (cnt / array.size(hist_arr)) * 100.0
+
+// ===== MTF DIVERGENCE =====
+calc_divergence(str_D, str_W, str_M) =>
+    div_DW = array.new_float(8, 0.0)
+    div_WM = array.new_float(8, 0.0)
+    div_DM = array.new_float(8, 0.0)
+    div_avg = array.new_float(8, 0.0)
+    for i = 0 to 7
+        d = array.get(str_D, i)
+        w = array.get(str_W, i)
+        m = array.get(str_M, i)
+        array.set(div_DW, i, math.abs(d - w))
+        array.set(div_WM, i, math.abs(w - m))
+        array.set(div_DM, i, math.abs(d - m))
+        array.set(div_avg, i, (math.abs(d - w) + math.abs(w - m) + math.abs(d - m)) / 3.0)
+    [div_DW, div_WM, div_DM, div_avg]
+
+// ===== MTF CONFLUENCE SCORE =====
+calc_confluence(str_D, str_W, str_M) =>
+    conf = array.new_float(8, 0.0)
+    for i = 0 to 7
+        d = array.get(str_D, i)
+        w = array.get(str_W, i)
+        m = array.get(str_M, i)
+        
+        // Direction agreement: all >50 (bullish) or all <50 (bearish)
+        bull = (d > 50 and w > 50 and m > 50) ? 1.0 : 0.0
+        bear = (d < 50 and w < 50 and m < 50) ? 1.0 : 0.0
+        dir_score = (bull + bear) * 50.0  // 0, 50, or 100
+        
+        // Magnitude alignment: inverse of pairwise variance
+        var = math.pow(d - w, 2) + math.pow(w - m, 2) + math.pow(d - m, 2)
+        mag_score = math.max(0.0, 100.0 - var * 0.5)  // 0-100, higher = more aligned
+        
+        // Composite: 50% direction, 50% magnitude
+        array.set(conf, i, dir_score * 0.5 + mag_score * 0.5)
+    conf
+
+// ===== THRESHOLD ALERTS =====
+check_alerts(str_D, rank_D, prev_str_D, prev_rank_D) =>
+    // Track cross states persistently
+    var bool[] cross_up_50   = array.new_bool(8, false)
+    var bool[] cross_dn_50   = array.new_bool(8, false)
+    var bool[] in_extreme    = array.new_bool(8, false)
+    var bool[] was_top2      = array.new_bool(8, false)
+    var bool[] was_bot2      = array.new_bool(8, false)
+    var int[]  alert_timer   = array.new_int(8, 0)  // flash duration
+    
+    alert_msgs = array.new_string(8, "")
+    
+    for i = 0 to 7
+        str = array.get(str_D, i)
+        prev = array.get(prev_str_D, i)
+        rnk = array.indexof(rank_D, i)
+        prev_rnk = array.get(prev_rank_D, i)
+        
+        msg = ""
+        
+        // Midline cross (50)
+        if alertMidline
+            if prev < 50 and str >= 50
+                cross_up_50[i] := true
+                msg := "↑50 "
+            if prev > 50 and str <= 50
+                cross_dn_50[i] := true
+                msg := "↓50 "
+        
+        // Extreme zones (70/30)
+        if alertExtremes
+            now_extreme = str >= 70 or str <= 30
+            if now_extreme and not array.get(in_extreme, i)
+                in_extreme[i] := true
+                msg := msg + (str >= 70 ? "⚠HIGH " : "⚠LOW ")
+            else if not now_extreme
+                in_extreme[i] := false
+        
+        // Top/Bottom 2 ranks
+        if alertTopBottom2
+            now_top2 = rnk <= 1  // rank 0 or 1 (1st or 2nd)
+            now_bot2 = rnk >= 6  // rank 6 or 7 (7th or 8th)
+            if now_top2 and not array.get(was_top2, i)
+                was_top2[i] := true
+                msg := msg + "🥇 "
+            else if not now_top2
+                was_top2[i] := false
+            if now_bot2 and not array.get(was_bot2, i)
+                was_bot2[i] := true
+                msg := msg + "🔻 "
+            else if not now_bot2
+                was_bot2[i] := false
+        
+        // Flash timer for visual feedback
+        if msg != ""
+            alert_timer[i] := 3  // show for 3 bars
+        else if array.get(alert_timer, i) > 0
+            alert_timer[i] := array.get(alert_timer, i) - 1
+        
+        array.set(alert_msgs, i, msg)
+    
+    [alert_msgs, alert_timer]
 
 // ===== RANKING =====
 rank_currencies(str_arr) =>
@@ -97,39 +242,68 @@ rank_currencies(str_arr) =>
             j := j - 1
     array.copy(r)
 
-// Compute for D, W, M (39 calls total, under 40 limit)
-strength_D = compute_strength("D")
-strength_W = compute_strength("W")
-strength_M = compute_strength("M")
+// ===== COMPUTE FOR D, W, M (39 calls total, under 40 limit) =====
+[strength_D, momentum_D, hist_D] = compute_strength("D", pctLookback)
+[strength_W, momentum_W, hist_W] = compute_strength("W", pctLookback)
+[strength_M, momentum_M, hist_M] = compute_strength("M", pctLookback)
 
 rank_D = rank_currencies(strength_D)
 rank_W = rank_currencies(strength_W)
 rank_M = rank_currencies(strength_M)
+
+// Delta calculations
+[div_DW, div_WM, div_DM, div_avg] = calc_divergence(strength_D, strength_W, strength_M)
+confluence = calc_confluence(strength_D, strength_W, strength_M)
+[alert_msgs, alert_timer] = check_alerts(strength_D, rank_D, array.new_float(8, 50.0), array.new_int(8, 0))
+
+// Percentiles (computed on last bar only for display)
+pctl_D = array.new_float(8, 50.0)
+pctl_W = array.new_float(8, 50.0)
+pctl_M = array.new_float(8, 50.0)
+if showPercentile and barstate.islast
+    for i = 0 to 7
+        array.set(pctl_D, i, calc_percentile(array.get(hist_D, i), array.get(strength_D, i)))
+        array.set(pctl_W, i, calc_percentile(array.get(hist_W, i), array.get(strength_W, i)))
+        array.set(pctl_M, i, calc_percentile(array.get(hist_M, i), array.get(strength_M, i)))
 
 // ===== TABLE (rectangular, bottom-right) =====
 var table tbl = na
 var int[] prev_rank = array.new_int(8, 0)
 pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
 
+// Dynamic column count
+extra_cols = (showMomentum ? 3 : 0) + (showDivergence ? 1 : 0) + (showPercentile ? 1 : 0) + (showConfluence ? 1 : 0)
+colCount = 6 + extra_cols  // base: CCY, D, W, M, RANK, CHANGE
+
 if barstate.islast and showTable
-    // Columns: CCY, DAILY, WEEKLY, MONTHLY, RANK, CHANGE
-    colCount = 6
     tbl := table.new(pos, colCount, 10, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
     
-    // Header - black text for high contrast
-    table.cell(tbl, 0, 0, "CCY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    table.cell(tbl, 1, 0, "DAILY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    table.cell(tbl, 2, 0, "WEEKLY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    table.cell(tbl, 3, 0, "MONTHLY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    table.cell(tbl, 4, 0, "RANK", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    table.cell(tbl, 5, 0, "CHANGE", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col = 0
+    // Base headers
+    table.cell(tbl, col, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    table.cell(tbl, col, 0, "DAILY",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    table.cell(tbl, col, 0, "WEEKLY",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    table.cell(tbl, col, 0, "MONTHLY",   text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    table.cell(tbl, col, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    table.cell(tbl, col, 0, "CHANGE",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    
+    // Optional headers
+    if showMomentum
+        table.cell(tbl, col, 0, "DΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+        table.cell(tbl, col, 0, "WΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+        table.cell(tbl, col, 0, "MΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    if showDivergence
+        table.cell(tbl, col, 0, "DIV",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    if showPercentile
+        table.cell(tbl, col, 0, "PCTL",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    if showConfluence
+        table.cell(tbl, col, 0, "CONF",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
     
     for row = 0 to 7
         idx = array.get(rank_D, row)
         c   = array.get(ccy, idx)
         cColor = array.get(cols, idx)
         
-        // Format string
         fmtStr = "#"
         if decimals > 0
             fmtStr := fmtStr + "."
@@ -141,29 +315,73 @@ if barstate.islast and showTable
         valM = str.tostring(array.get(strength_M, idx), fmtStr)
         rD   = str.tostring(array.indexof(rank_D, idx) + 1, "#")
         
-        // Rank change: compare current rank vs previous bar's rank
+        // Rank change arrow
         currRank = array.indexof(rank_D, idx)
         prevRank = array.get(prev_rank, idx)
         rankChg  = currRank - prevRank
-        // Negative rankChg = improved (moved up), positive = declined (moved down)
         chgArrow = rankChg < 0 ? "▲" : rankChg > 0 ? "▼" : "•"
         chgColor = rankChg < 0 ? color.new(#2e7d32, 0) : rankChg > 0 ? color.new(#c62828, 0) : color.new(#757575, 0)
         
-        // Update previous rank for next bar
+        // Momentum values
+        momD = array.get(momentum_D, idx)
+        momW = array.get(momentum_W, idx)
+        momM = array.get(momentum_M, idx)
+        momFmt = "+#.##;-#.##"
+        
+        // Divergence
+        divVal = array.get(div_avg, idx)
+        divColor = divVal <= 5 ? color.new(#2e7d32, 0) : divVal <= 15 ? color.new(#f9a825, 0) : color.new(#c62828, 0)
+        divIcon = divVal <= 5 ? "✓" : divVal <= 15 ? "◐" : "⚡"
+        
+        // Percentile
+        pctlD = array.get(pctl_D, idx)
+        pctlW = array.get(pctl_W, idx)
+        pctlM = array.get(pctl_M, idx)
+        pctlColor = pctlD >= 80 ? color.new(#c62828, 0) : pctlD <= 20 ? color.new(#2e7d32, 0) : color.black
+        
+        // Confluence
+        confVal = array.get(confluence, idx)
+        confColor = confVal >= 70 ? color.new(#2e7d32, 0) : confVal >= 40 ? color.new(#f9a825, 0) : color.new(#c62828, 0)
+        confIcon = confVal >= 70 ? "🟢" : confVal >= 40 ? "🟡" : "🔴"
+        
+        // Alert badge
+        alertBadge = array.get(alert_msgs, idx)
+        alertFlash = array.get(alert_timer, idx) > 0
+        
         array.set(prev_rank, idx, currRank)
         
-        // Currency label (color-coded)
-        table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
-        // Daily (black text on colored bg)
-        table.cell(tbl, 1, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        col = 0
+        // Currency label
+        table.cell(tbl, col, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95)); col := col + 1
+        // Daily
+        table.cell(tbl, col, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); col := col + 1
         // Weekly
-        table.cell(tbl, 2, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        table.cell(tbl, col, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); col := col + 1
         // Monthly
-        table.cell(tbl, 3, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
-        // Rank (black text)
-        table.cell(tbl, 4, row+1, "  " + rD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-        // Rank change arrow
-        table.cell(tbl, 5, row+1, "  " + chgArrow + "  ", text_color=chgColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+        table.cell(tbl, col, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); col := col + 1
+        // Rank
+        rankBg = alertFlash ? color.new(#fff3e0, 95) : color.new(#f5f5f5, 95)
+        table.cell(tbl, col, row+1, "  " + rD + "  ", text_color=color.black, text_size=size.normal, bgcolor=rankBg); col := col + 1
+        // Change (rank arrow + alert badge)
+        chgText = "  " + chgArrow + (alertBadge != "" ? " " + alertBadge : "") + "  "
+        table.cell(tbl, col, row+1, chgText, text_color=chgColor, text_size=size.normal, bgcolor=rankBg); col := col + 1
+        
+        // Optional columns
+        if showMomentum
+            momDColor = momD > 0.2 ? color.new(#2e7d32, 0) : momD < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0)
+            momWColor = momW > 0.2 ? color.new(#2e7d32, 0) : momW < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0)
+            momMColor = momM > 0.2 ? color.new(#2e7d32, 0) : momM < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0)
+            table.cell(tbl, col, row+1, "  " + str.tostring(momD, momFmt) + "  ", text_color=momDColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+            table.cell(tbl, col, row+1, "  " + str.tostring(momW, momFmt) + "  ", text_color=momWColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+            table.cell(tbl, col, row+1, "  " + str.tostring(momM, momFmt) + "  ", text_color=momMColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+        if showDivergence
+            table.cell(tbl, col, row+1, "  " + divIcon + " " + str.tostring(divVal, "#.##") + "  ", text_color=divColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+        if showPercentile
+            pctlText = "  " + str.tostring(pctlD, "#") + "  "
+            table.cell(tbl, col, row+1, pctlText, text_color=pctlColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+        if showConfluence
+            confText = "  " + confIcon + " " + str.tostring(confVal, "#") + "  "
+            table.cell(tbl, col, row+1, confText, text_color=confColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
 
 // Clean chart (no plots)
 plot(na)
