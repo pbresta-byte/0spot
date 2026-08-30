@@ -198,20 +198,20 @@ calc_aggregate(str_arr) =>
 calc_session_strength(str_arr, sess_idx) =>
     sess_wt = array.new_float(nCcy, 1.0)
     if sess_idx == 1  // TOKYO
-        sess_wt[array.indexof(ccy, "JPY")] := 1.5
-        sess_wt[array.indexof(ccy, "AUD")] := 1.3
-        sess_wt[array.indexof(ccy, "NZD")] := 1.3
+        array.set(sess_wt, array.indexof(ccy, "JPY"), 1.5)
+        array.set(sess_wt, array.indexof(ccy, "AUD"), 1.3)
+        array.set(sess_wt, array.indexof(ccy, "NZD"), 1.3)
     else if sess_idx == 2  // LONDON
-        sess_wt[array.indexof(ccy, "EUR")] := 1.5
-        sess_wt[array.indexof(ccy, "GBP")] := 1.5
-        sess_wt[array.indexof(ccy, "CHF")] := 1.3
+        array.set(sess_wt, array.indexof(ccy, "EUR"), 1.5)
+        array.set(sess_wt, array.indexof(ccy, "GBP"), 1.5)
+        array.set(sess_wt, array.indexof(ccy, "CHF"), 1.3)
     else if sess_idx == 5  // LON/NY OVERLAP
-        sess_wt[array.indexof(ccy, "EUR")] := 1.4
-        sess_wt[array.indexof(ccy, "GBP")] := 1.4
-        sess_wt[array.indexof(ccy, "USD")] := 1.4
+        array.set(sess_wt, array.indexof(ccy, "EUR"), 1.4)
+        array.set(sess_wt, array.indexof(ccy, "GBP"), 1.4)
+        array.set(sess_wt, array.indexof(ccy, "USD"), 1.4)
     else if sess_idx == 3 or sess_idx == 4  // NY
-        sess_wt[array.indexof(ccy, "USD")] := 1.5
-        sess_wt[array.indexof(ccy, "CAD")] := 1.3
+        array.set(sess_wt, array.indexof(ccy, "USD"), 1.5)
+        array.set(sess_wt, array.indexof(ccy, "CAD"), 1.3)
     
     adj = array.new_float(nCcy, 0.0)
     for i = 0 to nCcy - 1
