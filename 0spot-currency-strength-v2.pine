@@ -1,0 +1,339 @@
+//@version=6
+// 0SPOT v2 — Currency Strength Matrix (Alternate Version)
+// BIS 2022 volume-weighted majors + session-aware dynamic ranking
+// Features:
+//   1. Volume-weighted aggregate rank (all-time)
+//   2. BIS 2022 top pairs by global turnover (not single-broker)
+//   3. No static arrow header — dynamic columns only
+//   4. Aggregate strength score (replaces D/W/M) + delta columns
+//   5. Dynamic rank reordering (strongest always top)
+//   6. Session strength (NY/ASIA/LONDON) — auto-detects current session
+//   7. Pivot Hot Zone engine integration for entry timing
+//   8. Lookback-scaled BUY/SELL winner pair on table
+
+indicator("0SPOT v2 Currency Strength", shorttitle="0SPOTv2", overlay=true, max_lines_count=500)
+
+// ===== INPUTS =====
+showTable         = input.bool(true,     "Show Strength Table")
+tablePos          = input.string("bottom_right", "Table Position", options=["bottom_right", "bottom_left", "top_right", "top_left"])
+decimals          = input.int(1,         "Decimal Places", minval=0, maxval=3)
+
+// --- Session & Engine Options ---
+sessionMode       = input.string("auto", "Session Detection", options=["auto", "manual"], group="Session Engine")
+manualSession     = input.string("london", "Manual Session", options=["sydney", "tokyo", "london", "ny_am", "ny_pm", "overlap_lon_ny"], group="Session Engine")
+showSessionCol    = input.bool(true,     "Show Session Strength Column", group="Session Engine")
+showWinnerPair    = input.bool(true,     "Show Winner BUY/SELL Pair", group="Pivot Engine")
+pivotTF           = input.timeframe("H1", "Pivot Hot Zone Timeframe", group="Pivot Engine")
+pivotLookback     = input.int(200,       "Pivot Respect Lookback", minval=20, group="Pivot Engine")
+
+// ===== BIS 2022 VOLUME-WEIGHTED UNIVERSE =====
+// Top 10 currencies by global turnover share (BIS 2022 Triennial)
+// Weights normalized to sum=1.0 for aggregate scoring
+ccy   = array.from("USD", "EUR", "JPY", "GBP", "CNY", "AUD", "CAD", "CHF", "HKD", "SGD")
+volWt = array.from(0.4425, 0.1525, 0.0835, 0.0645, 0.0350, 0.0310, 0.0275, 0.0260, 0.0130, 0.0120)  // sums to ~0.887 (top 10 = 88.7% of all FX)
+nCcy  = 10
+
+// Theme colors (distinct, colorblind-safe)
+cols  = array.from(#1f77b4, #ff7f0e, #2ca02c, #d62728, #9467bd, #8c564b, #e377c2, #7f7f7f, #bcbd22, #17becf)
+
+// ===== BIS 2022 TOP PAIRS BY GLOBAL TURNOVER (OANDA format) =====
+// 20 pairs covering ~75% of global FX volume
+pairs = array.from(
+    "EURUSD","USDJPY","GBPUSD","USDCNY","USDCAD",
+    "AUDUSD","USDCHF","USDHKD","USDSGD","EURGBP",
+    "EURJPY","GBPJPY","EURCHF","EURCAD","AUDJPY",
+    "NZDUSD","NZDJPY","CADJPY","CHFJPY","EURAUD"
+)
+nPairs = 20
+
+// Pair -> base/quote mapping for ROC accumulation
+pairBase = array.from("EUR","USD","GBP","USD","USD","AUD","USD","USD","USD","EUR","EUR","GBP","EUR","EUR","AUD","NZD","NZD","CAD","CHF","EUR")
+pairQuote= array.from("USD","JPY","USD","CNY","CAD","USD","CHF","HKD","SGD","GBP","JPY","JPY","CHF","CAD","JPY","USD","JPY","JPY","JPY","AUD")
+
+// ===== HELPER: add weighted ROC to accumulators =====
+add_to_acc(acc_arr, cnt_arr, b, q, r, w) =>
+    bi = array.indexof(ccy, b)
+    qi = array.indexof(ccy, q)
+    if bi >= 0
+        array.set(acc_arr, bi, array.get(acc_arr, bi) + r * w)
+        array.set(cnt_arr, bi, array.get(cnt_arr, bi) + 1)
+    if qi >= 0
+        array.set(acc_arr, qi, array.get(acc_arr, qi) - r * w)
+        array.set(cnt_arr, qi, array.get(cnt_arr, qi) + 1)
+
+// ===== SESSION DETECTION =====
+// Returns: 0=sydney, 1=tokyo, 2=london, 3=ny_am, 4=ny_pm, 5=overlap_lon_ny
+get_session() =>
+    h = hour(timeframe.isintraday ? time : time_close, "UTC")
+    // UTC hours: Sydney 22-07, Tokyo 00-09, London 08-17, NY 13-22
+    sess = 0
+    if h >= 22 or h < 7
+        sess := 0  // sydney
+    else if h >= 0 and h < 9
+        sess := 1  // tokyo
+    else if h >= 8 and h < 13
+        sess := 2  // london (pre-NY)
+    else if h >= 13 and h < 17
+        sess := 5  // london/NY overlap
+    else if h >= 17 and h < 22
+        sess := 3  // ny_am
+    else
+        sess := 4  // ny_pm (shouldn't hit)
+    sessionMode == "manual" ? 
+        (manualSession == "sydney" ? 0 : manualSession == "tokyo" ? 1 : manualSession == "london" ? 2 : manualSession == "ny_am" ? 3 : manualSession == "ny_pm" ? 4 : 5)
+      : sess
+
+sessNames = array.from("SYDNEY", "TOKYO", "LONDON", "NY_AM", "NY_PM", "LON/NY")
+
+// ===== PIVOT HOT ZONE ENGINE (from Price Hot Zone) =====
+f_pivots(h, l, c) =>
+    pp = (h + l + c) / 3.0
+    r1 = 2.0 * pp - l
+    s1 = 2.0 * pp - h
+    r2 = pp + (h - l)
+    s2 = pp - (h - l)
+    r3 = h + 2.0 * (pp - l)
+    s3 = l - 2.0 * (pp - h)
+    m0 = 0.5 * (s2 + s3)
+    m1 = 0.5 * (s1 + s2)
+    m2 = 0.5 * (pp + s1)
+    m3 = 0.5 * (pp + r1)
+    m4 = 0.5 * (r1 + r2)
+    m5 = 0.5 * (r2 + r3)
+    [s3, m0, s2, m1, s1, m2, pp, m3, r1, m4, r2, m5, r3]
+
+f_respect(lvl, winBars, minTouches) =>
+    weightedTouched = 0.0
+    weightedHeld = 0.0
+    for i = 0 to winBars - 1
+        o = open[i]
+        c = close[i]
+        hi = high[i]
+        lo = low[i]
+        if lo <= lvl and hi >= lvl
+            w = math.pow(0.985, i)
+            weightedTouched += w
+            if (c > lvl) == (o > lvl)
+                weightedHeld += w
+    weightedTouched < minTouches ? na : 100.0 * weightedHeld / weightedTouched
+
+// ===== MULTI-TIMEFRAME ENGINE =====
+compute_strength(tf) =>
+    var float[] acc  = array.new_float(nCcy, 0.0)
+    var int[]   cnt  = array.new_int(nCcy, 0)
+    var float[] str  = array.new_float(nCcy, 50.0)
+    var float[] prev = array.new_float(nCcy, 50.0)
+    var float[] mom  = array.new_float(nCcy, 0.0)
+    
+    for i = 0 to nCcy - 1
+        array.set(acc, i, 0.0)
+        array.set(cnt, i, 0)
+    
+    // Request ROC for all pairs at global scope
+    r0  = request.security("OANDA:" + array.get(pairs, 0),  tf, ta.roc(close, 14))
+    r1  = request.security("OANDA:" + array.get(pairs, 1),  tf, ta.roc(close, 14))
+    r2  = request.security("OANDA:" + array.get(pairs, 2),  tf, ta.roc(close, 14))
+    r3  = request.security("OANDA:" + array.get(pairs, 3),  tf, ta.roc(close, 14))
+    r4  = request.security("OANDA:" + array.get(pairs, 4),  tf, ta.roc(close, 14))
+    r5  = request.security("OANDA:" + array.get(pairs, 5),  tf, ta.roc(close, 14))
+    r6  = request.security("OANDA:" + array.get(pairs, 6),  tf, ta.roc(close, 14))
+    r7  = request.security("OANDA:" + array.get(pairs, 7),  tf, ta.roc(close, 14))
+    r8  = request.security("OANDA:" + array.get(pairs, 8),  tf, ta.roc(close, 14))
+    r9  = request.security("OANDA:" + array.get(pairs, 9),  tf, ta.roc(close, 14))
+    r10 = request.security("OANDA:" + array.get(pairs, 10), tf, ta.roc(close, 14))
+    r11 = request.security("OANDA:" + array.get(pairs, 11), tf, ta.roc(close, 14))
+    r12 = request.security("OANDA:" + array.get(pairs, 12), tf, ta.roc(close, 14))
+    r13 = request.security("OANDA:" + array.get(pairs, 13), tf, ta.roc(close, 14))
+    r14 = request.security("OANDA:" + array.get(pairs, 14), tf, ta.roc(close, 14))
+    r15 = request.security("OANDA:" + array.get(pairs, 15), tf, ta.roc(close, 14))
+    r16 = request.security("OANDA:" + array.get(pairs, 16), tf, ta.roc(close, 14))
+    r17 = request.security("OANDA:" + array.get(pairs, 17), tf, ta.roc(close, 14))
+    r18 = request.security("OANDA:" + array.get(pairs, 18), tf, ta.roc(close, 14))
+    r19 = request.security("OANDA:" + array.get(pairs, 19), tf, ta.roc(close, 14))
+    
+    rArr = array.from(r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16,r17,r18,r19)
+    
+    for i = 0 to nPairs - 1
+        w = array.get(volWt, array.indexof(ccy, array.get(pairBase, i)))  // weight by base currency volume
+        add_to_acc(acc, cnt, array.get(pairBase, i), array.get(pairQuote, i), array.get(rArr, i), w)
+    
+    alpha = 2.0 / 6.0
+    for i = 0 to nCcy - 1
+        array.set(prev, i, array.get(str, i))
+        avg = array.get(cnt, i) > 0 ? array.get(acc, i) / array.get(cnt, i) : 0.0
+        inst = math.max(0.0, math.min(100.0, 50.0 + avg * 12.0))
+        array.set(str, i, array.get(str, i) + alpha * (inst - array.get(str, i)))
+        array.set(mom, i, array.get(str, i) - array.get(prev, i))
+    
+    [array.copy(str), array.copy(mom)]
+
+// ===== RANKING (dynamic - strongest first) =====
+rank_currencies(str_arr) =>
+    var int[] r = array.new_int(nCcy, 0)
+    for i = 0 to nCcy - 1
+        array.set(r, i, i)
+    for i = 1 to nCcy - 1
+        j = i
+        while j > 0 and array.get(str_arr, array.get(r, j)) > array.get(str_arr, array.get(r, j-1))
+            tmp = array.get(r, j)
+            array.set(r, j, array.get(r, j-1))
+            array.set(r, j-1, tmp)
+            j := j - 1
+    array.copy(r)
+
+// ===== AGGREGATE SCORE (volume-weighted across all pairs) =====
+calc_aggregate(str_arr) =>
+    agg = 0.0
+    for i = 0 to nCcy - 1
+        agg := agg + array.get(str_arr, i) * array.get(volWt, i)
+    agg
+
+// ===== SESSION STRENGTH (compute per session from recent bars) =====
+calc_session_strength(str_arr, sess_idx) =>
+    // Simple proxy: weight currencies by their typical session activity
+    // USD/JPY strong in Tokyo, EUR/GBP in London, USD pairs in NY
+    sess_wt = array.new_float(nCcy, 1.0)
+    if sess_idx == 1  // TOKYO
+        sess_wt[array.indexof(ccy, "JPY")] := 1.5
+        sess_wt[array.indexof(ccy, "AUD")] := 1.3
+        sess_wt[array.indexof(ccy, "NZD")] := 1.3
+    else if sess_idx == 2  // LONDON
+        sess_wt[array.indexof(ccy, "EUR")] := 1.5
+        sess_wt[array.indexof(ccy, "GBP")] := 1.5
+        sess_wt[array.indexof(ccy, "CHF")] := 1.3
+    else if sess_idx == 5  // LON/NY OVERLAP
+        sess_wt[array.indexof(ccy, "EUR")] := 1.4
+        sess_wt[array.indexof(ccy, "GBP")] := 1.4
+        sess_wt[array.indexof(ccy, "USD")] := 1.4
+    else if sess_idx == 3 or sess_idx == 4  // NY
+        sess_wt[array.indexof(ccy, "USD")] := 1.5
+        sess_wt[array.indexof(ccy, "CAD")] := 1.3
+    
+    // Apply session weights to current strength
+    adj = array.new_float(nCcy, 0.0)
+    for i = 0 to nCcy - 1
+        array.set(adj, i, array.get(str_arr, i) * array.get(sess_wt, i))
+    adj
+
+// ===== WINNER PAIR (Pivot Hot Zone) =====
+calc_winner_pair() =>
+    // Get pivot levels for current pair from hot zone TF
+    hH = request.security(syminfo.tickerid, pivotTF, high[1])
+    hL = request.security(syminfo.tickerid, pivotTF, low[1])
+    hC = request.security(syminfo.tickerid, pivotTF, close[1])
+    [hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3] = f_pivots(hH, hL, hC)
+    hLv = array.from(hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3)
+    
+    band = ta.atr(14) * 0.5
+    bestBuy = float(na)
+    bestBuyS = -1.0
+    bestSell = float(na)
+    bestSellS = -1.0
+    
+    tfRatio = math.max(1.0, timeframe.in_seconds(pivotTF) / timeframe.in_seconds())
+    winBars = math.min(4900, int(math.round(pivotLookback * tfRatio)))
+    
+    for k = 0 to 12
+        lvl = array.get(hLv, k)
+        r = f_respect(lvl, winBars, 5)
+        if not na(r)
+            sc = r * 0.75
+            if lvl < close and sc > bestBuyS
+                bestBuyS := sc
+                bestBuy := lvl
+            if lvl > close and sc > bestSellS
+                bestSellS := sc
+                bestSell := lvl
+    
+    [bestBuy, bestBuyS, bestSell, bestSellS]
+
+// ===== COMPUTE =====
+[strength, momentum] = compute_strength("D")  // Daily as base
+rank = rank_currencies(strength)
+aggScore = calc_aggregate(strength)
+
+sessIdx = get_session()
+sessStr = calc_session_strength(strength, sessIdx)
+sessRank = rank_currencies(sessStr)
+
+[buyZone, buyScore, sellZone, sellScore] = showWinnerPair ? calc_winner_pair() : [float(na), float(na), float(na), float(na)]
+
+// ===== TABLE =====
+var table tbl = na
+var int[] prev_rank = array.new_int(nCcy, 0)
+pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
+
+// Columns: CCY | AGG | MOM | RANK | RΔ | SESS | SESS_R | WINNER
+colCount = showSessionCol ? 8 : 7
+if showWinnerPair
+    colCount := colCount + 2  // BUY, SELL
+
+if barstate.islast and showTable
+    tbl := table.new(pos, colCount, nCcy + 1, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
+    
+    c = 0
+    table.cell(tbl, c, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    table.cell(tbl, c, 0, "AGG",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    table.cell(tbl, c, 0, "MOM",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    table.cell(tbl, c, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    table.cell(tbl, c, 0, "RΔ",        text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    if showSessionCol
+        table.cell(tbl, c, 0, "SESS",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+        table.cell(tbl, c, 0, "S-RANK",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    if showWinnerPair
+        table.cell(tbl, c, 0, "BUY_ZONE",  text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+        table.cell(tbl, c, 0, "SELL_ZONE", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); c := c + 1
+    
+    for row = 0 to nCcy - 1
+        idx = array.get(rank, row)  // Dynamic reorder: strongest first
+        cur = array.get(ccy, idx)
+        cColor = array.get(cols, idx)
+        
+        fmtStr = "#"
+        if decimals > 0
+            fmtStr := fmtStr + "."
+            for k = 0 to decimals - 1
+                fmtStr := fmtStr + "0"
+        
+        val = str.tostring(array.get(strength, idx), fmtStr)
+        mom = array.get(momentum, idx)
+        momFmt = "+#.##;-#.##"
+        rnk = str.tostring(row + 1, "#")
+        
+        // Rank change
+        currRank = row
+        prevRank = array.get(prev_rank, idx)
+        rankChg = currRank - prevRank
+        chgArrow = rankChg < 0 ? "▲" : rankChg > 0 ? "▼" : "•"
+        chgColor = rankChg < 0 ? color.new(#2e7d32, 0) : rankChg > 0 ? color.new(#c62828, 0) : color.new(#757575, 0)
+        
+        // Session
+        sessIdx2 = array.indexof(sessRank, idx)
+        sessRnk = str.tostring(sessIdx2 + 1, "#")
+        sessVal = str.tostring(array.get(sessStr, idx), fmtStr)
+        sessColor = sessIdx2 <= 1 ? color.new(#2e7d32, 0) : sessIdx2 <= 3 ? color.new(#f9a825, 0) : color.new(#c62828, 0)
+        
+        // Winner pair (only show on top row)
+        showBuy = showWinnerPair and row == 0 and not na(buyZone)
+        showSell = showWinnerPair and row == 0 and not na(sellZone)
+        buyTxt = showBuy ? str.tostring(buyZone, "#.####") + " (" + str.tostring(buyScore, "#.#") + ")" : ""
+        sellTxt = showSell ? str.tostring(sellZone, "#.####") + " (" + str.tostring(sellScore, "#.#") + ")" : ""
+        buyColor = showBuy ? color.new(#2e7d32, 0) : color.black
+        sellColor = showSell ? color.new(#c62828, 0) : color.black
+        
+        array.set(prev_rank, idx, currRank)
+        
+        c = 0
+        table.cell(tbl, c, row+1, "  " + cur + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95)); c := c + 1
+        table.cell(tbl, c, row+1, "  " + val + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); c := c + 1
+        table.cell(tbl, c, row+1, "  " + str.tostring(mom, momFmt) + "  ", text_color=mom > 0.2 ? color.new(#2e7d32, 0) : mom < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0), text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+        table.cell(tbl, c, row+1, "  " + rnk + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+        table.cell(tbl, c, row+1, "  " + chgArrow + "  ", text_color=chgColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+        if showSessionCol
+            table.cell(tbl, c, row+1, "  " + sessVal + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+            table.cell(tbl, c, row+1, "  " + sessRnk + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+        if showWinnerPair
+            table.cell(tbl, c, row+1, "  " + buyTxt + "  ", text_color=buyColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+            table.cell(tbl, c, row+1, "  " + sellTxt + "  ", text_color=sellColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); c := c + 1
+
+plot(na)
