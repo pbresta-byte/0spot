@@ -258,7 +258,13 @@ sessIdx = get_session()
 sessStr = calc_session_strength(strength, sessIdx)
 sessRank = rank_currencies(sessStr)
 
-[buyZone, buyScore, sellZone, sellScore] = showWinnerPair ? calc_winner_pair() : [float(na), float(na), float(na), float(na)]
+if showWinnerPair
+    [buyZone, buyScore, sellZone, sellScore] = calc_winner_pair()
+else
+    buyZone  := float(na)
+    buyScore := float(na)
+    sellZone := float(na)
+    sellScore := float(na)
 
 // ===== TABLE =====
 var table tbl = na
