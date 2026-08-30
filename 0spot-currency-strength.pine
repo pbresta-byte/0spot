@@ -280,24 +280,36 @@ if barstate.islast and showTable
     
     col = 0
     // Base headers
-    table.cell(tbl, col, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-    table.cell(tbl, col, 0, "DAILY",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-    table.cell(tbl, col, 0, "WEEKLY",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-    table.cell(tbl, col, 0, "MONTHLY",   text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-    table.cell(tbl, col, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-    table.cell(tbl, col, 0, "CHANGE",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+    table.cell(tbl, col, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "DAILY",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "WEEKLY",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "MONTHLY",   text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "CHANGE",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
     
     // Optional headers
     if showMomentum
-        table.cell(tbl, col, 0, "DΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-        table.cell(tbl, col, 0, "WΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
-        table.cell(tbl, col, 0, "MΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+        table.cell(tbl, col, 0, "DΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
+        table.cell(tbl, col, 0, "WΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
+        table.cell(tbl, col, 0, "MΔ",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
     if showDivergence
-        table.cell(tbl, col, 0, "DIV",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+        table.cell(tbl, col, 0, "DIV",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
     if showPercentile
-        table.cell(tbl, col, 0, "PCTL",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+        table.cell(tbl, col, 0, "PCTL",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
     if showConfluence
-        table.cell(tbl, col, 0, "CONF",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100)); col := col + 1
+        table.cell(tbl, col, 0, "CONF",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
     
     for row = 0 to 7
         idx = array.get(rank_D, row)
@@ -352,36 +364,48 @@ if barstate.islast and showTable
         
         col = 0
         // Currency label
-        table.cell(tbl, col, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95)); col := col + 1
+        table.cell(tbl, col, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        col := col + 1
         // Daily
-        table.cell(tbl, col, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); col := col + 1
+        table.cell(tbl, col, row+1, "  " + valD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        col := col + 1
         // Weekly
-        table.cell(tbl, col, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); col := col + 1
+        table.cell(tbl, col, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        col := col + 1
         // Monthly
-        table.cell(tbl, col, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30)); col := col + 1
+        table.cell(tbl, col, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        col := col + 1
         // Rank
         rankBg = alertFlash ? color.new(#fff3e0, 95) : color.new(#f5f5f5, 95)
-        table.cell(tbl, col, row+1, "  " + rD + "  ", text_color=color.black, text_size=size.normal, bgcolor=rankBg); col := col + 1
+        table.cell(tbl, col, row+1, "  " + rD + "  ", text_color=color.black, text_size=size.normal, bgcolor=rankBg)
+        col := col + 1
         // Change (rank arrow + alert badge)
         chgText = "  " + chgArrow + (alertBadge != "" ? " " + alertBadge : "") + "  "
-        table.cell(tbl, col, row+1, chgText, text_color=chgColor, text_size=size.normal, bgcolor=rankBg); col := col + 1
+        table.cell(tbl, col, row+1, chgText, text_color=chgColor, text_size=size.normal, bgcolor=rankBg)
+        col := col + 1
         
         // Optional columns
         if showMomentum
             momDColor = momD > 0.2 ? color.new(#2e7d32, 0) : momD < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0)
             momWColor = momW > 0.2 ? color.new(#2e7d32, 0) : momW < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0)
             momMColor = momM > 0.2 ? color.new(#2e7d32, 0) : momM < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0)
-            table.cell(tbl, col, row+1, "  " + str.tostring(momD, momFmt) + "  ", text_color=momDColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
-            table.cell(tbl, col, row+1, "  " + str.tostring(momW, momFmt) + "  ", text_color=momWColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
-            table.cell(tbl, col, row+1, "  " + str.tostring(momM, momFmt) + "  ", text_color=momMColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+            table.cell(tbl, col, row+1, "  " + str.tostring(momD, momFmt) + "  ", text_color=momDColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col := col + 1
+            table.cell(tbl, col, row+1, "  " + str.tostring(momW, momFmt) + "  ", text_color=momWColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col := col + 1
+            table.cell(tbl, col, row+1, "  " + str.tostring(momM, momFmt) + "  ", text_color=momMColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col := col + 1
         if showDivergence
-            table.cell(tbl, col, row+1, "  " + divIcon + " " + str.tostring(divVal, "#.##") + "  ", text_color=divColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+            table.cell(tbl, col, row+1, "  " + divIcon + " " + str.tostring(divVal, "#.##") + "  ", text_color=divColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col := col + 1
         if showPercentile
             pctlText = "  " + str.tostring(pctlD, "#") + "  "
-            table.cell(tbl, col, row+1, pctlText, text_color=pctlColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+            table.cell(tbl, col, row+1, pctlText, text_color=pctlColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col := col + 1
         if showConfluence
             confText = "  " + confIcon + " " + str.tostring(confVal, "#") + "  "
-            table.cell(tbl, col, row+1, confText, text_color=confColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95)); col := col + 1
+            table.cell(tbl, col, row+1, confText, text_color=confColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col := col + 1
 
 // Clean chart (no plots)
 plot(na)
