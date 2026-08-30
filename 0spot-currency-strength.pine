@@ -191,41 +191,41 @@ check_alerts(str_D, rank_D, prev_str_D, prev_rank_D) =>
         // Midline cross (50)
         if alertMidline
             if prev < 50 and str >= 50
-                cross_up_50[i] := true
+                array.set(cross_up_50, i, true)
                 msg := "↑50 "
             if prev > 50 and str <= 50
-                cross_dn_50[i] := true
+                array.set(cross_dn_50, i, true)
                 msg := "↓50 "
         
         // Extreme zones (70/30)
         if alertExtremes
             now_extreme = str >= 70 or str <= 30
             if now_extreme and not array.get(in_extreme, i)
-                in_extreme[i] := true
+                array.set(in_extreme, i, true)
                 msg := msg + (str >= 70 ? "⚠HIGH " : "⚠LOW ")
             else if not now_extreme
-                in_extreme[i] := false
+                array.set(in_extreme, i, false)
         
         // Top/Bottom 2 ranks
         if alertTopBottom2
             now_top2 = rnk <= 1  // rank 0 or 1 (1st or 2nd)
             now_bot2 = rnk >= 6  // rank 6 or 7 (7th or 8th)
             if now_top2 and not array.get(was_top2, i)
-                was_top2[i] := true
+                array.set(was_top2, i, true)
                 msg := msg + "🥇 "
             else if not now_top2
-                was_top2[i] := false
+                array.set(was_top2, i, false)
             if now_bot2 and not array.get(was_bot2, i)
-                was_bot2[i] := true
+                array.set(was_bot2, i, true)
                 msg := msg + "🔻 "
             else if not now_bot2
-                was_bot2[i] := false
+                array.set(was_bot2, i, false)
         
         // Flash timer for visual feedback
         if msg != ""
-            alert_timer[i] := 3  // show for 3 bars
+            array.set(alert_timer, i, 3)  // show for 3 bars
         else if array.get(alert_timer, i) > 0
-            alert_timer[i] := array.get(alert_timer, i) - 1
+            array.set(alert_timer, i, array.get(alert_timer, i) - 1)
         
         array.set(alert_msgs, i, msg)
     
