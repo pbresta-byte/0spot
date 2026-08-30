@@ -1,0 +1,10 @@
+﻿.claude/skills/
+
+# Obsidian: keep the config (which plugins/settings are enabled) versioned,
+# but not the downloaded plugin binaries (~8MB, re-fetchable) or local-machine
+# UI state (open panes, last file, etc. — different per device).
+.obsidian/plugins/*/main.js
+.obsidian/plugins/*/styles.css
+.obsidian/plugins/*/data.json
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json

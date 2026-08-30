@@ -7,7 +7,6 @@ indicator("0SPOT Currency Strength", shorttitle="0SPOT", overlay=true, max_lines
 
 // ===== INPUTS =====
 showTable     = input.bool(true, "Show Strength Table")
-showDelta     = input.bool(true, "Show D→W / W→M Delta")
 tablePos      = input.string("bottom_right", "Table Position", options=["bottom_right", "bottom_left", "top_right", "top_left"])
 decimals      = input.int(1, "Decimal Places", minval=0, maxval=3)
 
@@ -109,22 +108,21 @@ rank_M = rank_currencies(strength_M)
 
 // ===== TABLE (rectangular, bottom-right) =====
 var table tbl = na
+var int[] prev_rank = array.new_int(8, 0)
 pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
 
 if barstate.islast and showTable
-    // Columns: CCY, DAILY, WEEKLY, MONTHLY, RANK, [D→W Δ], [W→M Δ]
-    colCount = showDelta ? 7 : 5
+    // Columns: CCY, DAILY, WEEKLY, MONTHLY, RANK, CHANGE
+    colCount = 6
     tbl := table.new(pos, colCount, 10, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
     
-    // Header
-    table.cell(tbl, 0, 0, "CCY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-    table.cell(tbl, 1, 0, "DAILY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-    table.cell(tbl, 2, 0, "WEEKLY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-    table.cell(tbl, 3, 0, "MONTHLY", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-    table.cell(tbl, 4, 0, "RANK", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-    if showDelta
-        table.cell(tbl, 5, 0, "D→W Δ", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
-        table.cell(tbl, 6, 0, "W→M Δ", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a1a, 100))
+    // Header - black text for high contrast
+    table.cell(tbl, 0, 0, "CCY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, 1, 0, "DAILY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, 2, 0, "WEEKLY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, 3, 0, "MONTHLY", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, 4, 0, "RANK", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, 5, 0, "CHANGE", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
     
     for row = 0 to 7
         idx = array.get(rank_D, row)
@@ -143,9 +141,16 @@ if barstate.islast and showTable
         valM = str.tostring(array.get(strength_M, idx), fmtStr)
         rD   = str.tostring(array.indexof(rank_D, idx) + 1, "#")
         
-        // Deltas
-        dDW = str.tostring(array.get(strength_W, idx) - array.get(strength_D, idx), "+#.##;-#.##")
-        dWM = str.tostring(array.get(strength_M, idx) - array.get(strength_W, idx), "+#.##;-#.##")
+        // Rank change: compare current rank vs previous bar's rank
+        currRank = array.indexof(rank_D, idx)
+        prevRank = array.get(prev_rank, idx)
+        rankChg  = currRank - prevRank
+        // Negative rankChg = improved (moved up), positive = declined (moved down)
+        chgArrow = rankChg < 0 ? "▲" : rankChg > 0 ? "▼" : "•"
+        chgColor = rankChg < 0 ? color.new(#2e7d32, 0) : rankChg > 0 ? color.new(#c62828, 0) : color.new(#757575, 0)
+        
+        // Update previous rank for next bar
+        array.set(prev_rank, idx, currRank)
         
         // Currency label (color-coded)
         table.cell(tbl, 0, row+1, "  " + c + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
@@ -155,16 +160,10 @@ if barstate.islast and showTable
         table.cell(tbl, 2, row+1, "  " + valW + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
         // Monthly
         table.cell(tbl, 3, row+1, "  " + valM + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
-        // Rank
-        table.cell(tbl, 4, row+1, "  " + rD + "  ", text_color=color.white, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
-        // Deltas
-        if showDelta
-            // D→W delta - green if improving, red if declining
-            dwColor = (array.get(strength_W, idx) - array.get(strength_D, idx)) >= 0 ? color.new(#4caf50, 0) : color.new(#f44336, 0)
-            table.cell(tbl, 5, row+1, "  " + dDW + "  ", text_color=dwColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
-            // W→M delta
-            wmColor = (array.get(strength_M, idx) - array.get(strength_W, idx)) >= 0 ? color.new(#4caf50, 0) : color.new(#f44336, 0)
-            table.cell(tbl, 6, row+1, "  " + dWM + "  ", text_color=wmColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        // Rank (black text)
+        table.cell(tbl, 4, row+1, "  " + rD + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+        // Rank change arrow
+        table.cell(tbl, 5, row+1, "  " + chgArrow + "  ", text_color=chgColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
 
 // Clean chart (no plots)
 plot(na)
