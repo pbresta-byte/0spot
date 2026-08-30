@@ -87,9 +87,8 @@ get_session() =>
         sess := 3
     else
         sess := 4
-    sessionMode == "manual" ? 
-        (manualSession == "sydney" ? 0 : manualSession == "tokyo" ? 1 : manualSession == "london" ? 2 : manualSession == "ny_am" ? 3 : manualSession == "ny_pm" ? 4 : 5)
-      : sess
+    manualSess = manualSession == "sydney" ? 0 : manualSession == "tokyo" ? 1 : manualSession == "london" ? 2 : manualSession == "ny_am" ? 3 : manualSession == "ny_pm" ? 4 : 5
+    sessionMode == "manual" ? manualSess : sess
 
 sessNames = array.from("SYDNEY", "TOKYO", "LONDON", "NY_AM", "NY_PM", "LON/NY")
 
