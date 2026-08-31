@@ -1,15 +1,18 @@
 //@version=6
-// 0SPOT v2 — Currency Strength Matrix (Alternate Version)
-// OANDA 68-pair universe + BIS 2022 volume-weighted majors + session-aware dynamic ranking
+// 0SPOT v2.1 — Currency Strength Matrix
+// BIS 2022 volume-weighted (USD/EUR/JPY/GBP/CNH/AUD/CAD/CHF/HKD/SGD/NZD/SEK/NOK/MXN/ZAR)
+// 14 OANDA pairs covering all 15 currencies, session-aware dynamic ranking,
+// EWMA smoothing, rank-delta tracking, and a Best-Pair engine that surfaces
+// the strongest-vs-weakest pair to trade right now (with session bias option).
+//
 // Features:
-//   1. Volume-weighted aggregate rank (all-time)
-//   2. Full OANDA instrument universe (68 pairs) filtered to BIS 2022 top currencies
-//   3. No static arrow header — dynamic columns only
-//   4. Aggregate strength score (replaces D/W/M) + delta columns
-//   5. Dynamic rank reordering (strongest always top)
-//   6. Session strength (SYD/TOK/LON/NY/LON-NY) — auto-detects current session
-//   7. Pivot Hot Zone engine integration for entry timing
-//   8. Lookback-scaled BUY/SELL winner pair on table
+//   1. Volume-weighted aggregate strength (0-100, centered at 50)
+//   2. EWMA-smoothed momentum (alpha=0.333 over 6-bar window)
+//   3. Dynamic rank reordering (strongest always top)
+//   4. Rank-delta tracking vs previous bar (▲▼•)
+//   5. Session-weighted strength overlay (SYD/TOK/LON/NY_AM/NY_PM/LON-NY)
+//   6. Best-Pair engine: LONG strongest / SHORT weakest, optional session bias
+//   7. Strength-gap filter (skip pairs with gap < threshold)
 
 indicator("0SPOT v2 Currency Strength", shorttitle="0SPOTv2", overlay=true, max_lines_count=500)
 
@@ -22,42 +25,34 @@ decimals          = input.int(1,         "Decimal Places", minval=0, maxval=3)
 sessionMode       = input.string("auto", "Session Detection", options=["auto", "manual"], group="Session Engine")
 manualSession     = input.string("london", "Manual Session", options=["sydney", "tokyo", "london", "ny_am", "ny_pm", "overlap_lon_ny"], group="Session Engine")
 showSessionCol    = input.bool(true,     "Show Session Strength Column", group="Session Engine")
-showWinnerPair    = input.bool(true,     "Show Winner BUY/SELL Pair", group="Pivot Engine")
-pivotTF           = input.timeframe("H1", "Pivot Hot Zone Timeframe", group="Pivot Engine")
-pivotLookback     = input.int(200,       "Pivot Respect Lookback", minval=20, group="Pivot Engine")
+showBestPair      = input.bool(true,     "Show BEST PAIR (long strong / short weak)", group="Best Pair Engine")
+minStrengthGap    = input.float(0.5,     "Min strength gap to show pair", minval=0.0, step=0.1, group="Best Pair Engine")
+sessionBias       = input.bool(true,     "Weight pair selection by current session", group="Best Pair Engine")
 
 // ===== BIS 2022 VOLUME-WEIGHTED UNIVERSE (Top 15 currencies = 95%+ of FX) =====
 // BIS 2022 Triennial Survey: global turnover shares normalized to top 15
-ccy   = array.from("USD", "EUR", "JPY", "GBP", "CNY", "AUD", "CAD", "CHF", "HKD", "SGD", "NZD", "SEK", "NOK", "MXN", "ZAR")
+// NOTE: "CNH" used instead of BIS "CNY" — OANDA lists offshore yuan as CNH,
+// which is what's traded on the platform. BIS volume weight (0.0350) applies.
+ccy   = array.from("USD", "EUR", "JPY", "GBP", "CNH", "AUD", "CAD", "CHF", "HKD", "SGD", "NZD", "SEK", "NOK", "MXN", "ZAR")
 volWt = array.from(0.4425, 0.1525, 0.0835, 0.0645, 0.0350, 0.0310, 0.0275, 0.0260, 0.0130, 0.0120, 0.0100, 0.0080, 0.0070, 0.0070, 0.0060)
 nCcy  = 15
 
 // Theme colors (distinct, colorblind-safe)
 cols  = array.from(#1f77b4, #ff7f0e, #2ca02c, #d62728, #9467bd, #8c564b, #e377c2, #7f7f7f, #bcbd22, #17becf, #ff9896, #c5b0d5, #c49c94, #f7b6d2, #c7c7c7)
 
-// ===== FULL OANDA 68-PAIR UNIVERSE (tradeable on OANDA) =====
-// Filtered to pairs where both currencies are in our top-15 list
+// ===== ACTIVE 14-PAIR UNIVERSE: covers ALL 15 BIS currencies =====
+// Each pair chosen so the set {bases ∪ quotes} == ccy[] (BIS top 15)
+// Index mapping must match pairBase[] and pairQuote[] below.
 pairs = array.from(
     "EURUSD","USDJPY","GBPUSD","USDCAD","AUDUSD",
-    "USDCHF","NZDUSD","EURGBP","EURJPY","GBPJPY",
-    "EURCHF","EURCAD","AUDJPY","NZDJPY","CADJPY",
-    "CHFJPY","EURAUD","GBPCHF","GBPCAD","GBPAUD",
-    "AUDCAD","AUDCHF","AUDNZD","CADCHF","CADSGD",
-    "CHFJPY","EURSEK","EURNOK","EURNZD","EURZAR",
-    "GBPSEK","GBPNOK","GBPNZD","NZDCHF","NZDCAD",
-    "NZDSGD","SGDJPY","USDSEK","USDNOK","USDSGD",
-    "USDHKD","USDCNH","USDMXN","USDZAR","USDTRY",
-    "USDTHB","USDCZK","USDPLN","USDHUF","USDSEK",
-    "EURHUF","EURPLN","EURCZK","EURDKK","GBPPLN",
-    "GBPHKD","GBPSGD","CHFSGD","CADHKD","NZDHKD",
-    "AUDHKD","AUDSEK","AUDSGD","CADSGD","TRYJPY",
-    "ZARJPY","HKDJPY","CHFHKD","SGDCHF"
+    "USDCHF","NZDUSD","USDCNH","USDHKD","USDSGD",
+    "USDSEK","USDNOK","USDMXN","USDZAR"
 )
-nPairs = 68
+nPairs = 14
 
 // Pair -> base/quote mapping (OANDA format: BASE_QUOTE)
-pairBase  = array.from("EUR","USD","GBP","USD","AUD","USD","NZD","EUR","EUR","GBP","EUR","EUR","AUD","NZD","CAD","CHF","EUR","GBP","GBP","GBP","AUD","AUD","AUD","CAD","CAD","CHF","EUR","EUR","EUR","EUR","GBP","GBP","GBP","NZD","NZD","NZD","SGD","USD","USD","USD","USD","USD","USD","USD","USD","EUR","EUR","EUR","EUR","GBP","GBP","GBP","CHF","CAD","NZD","AUD","AUD","AUD","CAD","TRY","ZAR","HKD","CHF","SGD")
-pairQuote = array.from("USD","JPY","USD","CAD","USD","CHF","USD","GBP","JPY","JPY","CHF","CAD","JPY","JPY","JPY","JPY","AUD","CHF","CAD","AUD","CAD","CHF","NZD","CHF","SGD","JPY","SEK","NOK","NZD","ZAR","SEK","NOK","NZD","CHF","CAD","SGD","JPY","HKD","CNH","MXN","ZAR","TRY","THB","CZK","PLN","HUF","SEK","HUF","PLN","CZK","DKK","PLN","HKD","SGD","SGD","HKD","HKD","SEK","SGD","SGD","JPY","JPY","JPY","HKD","CHF")
+pairBase  = array.from("EUR","USD","GBP","USD","AUD","USD","NZD","USD","USD","USD","USD","USD","USD","USD")
+pairQuote = array.from("USD","JPY","USD","CAD","USD","CHF","USD","CNH","HKD","SGD","SEK","NOK","MXN","ZAR")
 
 // ===== HELPER: add weighted ROC to accumulators =====
 add_to_acc(acc_arr, cnt_arr, b, q, r, w) =>
@@ -91,38 +86,6 @@ get_session() =>
     sessionMode == "manual" ? manualSess : sess
 
 sessNames = array.from("SYDNEY", "TOKYO", "LONDON", "NY_AM", "NY_PM", "LON/NY")
-
-// ===== PIVOT HOT ZONE ENGINE =====
-f_pivots(h, l, c) =>
-    pp = (h + l + c) / 3.0
-    r1 = 2.0 * pp - l
-    s1 = 2.0 * pp - h
-    r2 = pp + (h - l)
-    s2 = pp - (h - l)
-    r3 = h + 2.0 * (pp - l)
-    s3 = l - 2.0 * (pp - h)
-    m0 = 0.5 * (s2 + s3)
-    m1 = 0.5 * (s1 + s2)
-    m2 = 0.5 * (pp + s1)
-    m3 = 0.5 * (pp + r1)
-    m4 = 0.5 * (r1 + r2)
-    m5 = 0.5 * (r2 + r3)
-    [s3, m0, s2, m1, s1, m2, pp, m3, r1, m4, r2, m5, r3]
-
-f_respect(lvl, winBars, minTouches) =>
-    weightedTouched = 0.0
-    weightedHeld = 0.0
-    for i = 0 to winBars - 1
-        o = open[i]
-        c = close[i]
-        hi = high[i]
-        lo = low[i]
-        if lo <= lvl and hi >= lvl
-            w = math.pow(0.985, i)
-            weightedTouched += w
-            if (c > lvl) == (o > lvl)
-                weightedHeld += w
-    weightedTouched < minTouches ? na : 100.0 * weightedHeld / weightedTouched
 
 // ===== MULTI-TIMEFRAME ENGINE =====
 // NOTE: request.security() MUST be at global scope. We hoist 14 calls (one per
@@ -200,32 +163,8 @@ calc_session_strength(str_arr, sess_idx) =>
     adj
 
 // ===== WINNER PAIR (Pivot Hot Zone) =====
-calc_winner_pair(hH, hL, hC) =>
-    [hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3] = f_pivots(hH, hL, hC)
-    hLv = array.from(hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3)
-    
-    band = ta.atr(14) * 0.5
-    bestBuy = float(na)
-    bestBuyS = -1.0
-    bestSell = float(na)
-    bestSellS = -1.0
-    
-    tfRatio = math.max(1.0, timeframe.in_seconds(pivotTF) / timeframe.in_seconds())
-    winBars = math.min(4900, int(math.round(pivotLookback * tfRatio)))
-    
-    for k = 0 to 12
-        lvl = array.get(hLv, k)
-        r = f_respect(lvl, winBars, 5)
-        if not na(r)
-            sc = r * 0.75
-            if lvl < close and sc > bestBuyS
-                bestBuyS := sc
-                bestBuy := lvl
-            if lvl > close and sc > bestSellS
-                bestSellS := sc
-                bestSell := lvl
-    
-    [bestBuy, bestBuyS, bestSell, bestSellS]
+// [REMOVED in v2.1 — replaced by Best Pair Engine. Pivot zones are pair-specific
+//  and don't translate cleanly into a 15-currency matrix.]
 
 // ===== GLOBAL SCOPE: request.security() calls (must NOT be inside functions) =====
 // 14 top BIS pairs at D timeframe (under 40-call limit)
@@ -244,11 +183,6 @@ sec11 = request.security("OANDA:" + array.get(pairs, 11), "D", ta.roc(close, 14)
 sec12 = request.security("OANDA:" + array.get(pairs, 12), "D", ta.roc(close, 14))
 sec13 = request.security("OANDA:" + array.get(pairs, 13), "D", ta.roc(close, 14))
 
-// Pivot Hot Zone prev-bar OHLC at user-selected TF (3 calls)
-phH = request.security(syminfo.tickerid, pivotTF, high[1])
-phL = request.security(syminfo.tickerid, pivotTF, low[1])
-phC = request.security(syminfo.tickerid, pivotTF, close[1])
-
 // ===== COMPUTE =====
 [strength, momentum] = compute_strength(sec0, sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9, sec10, sec11, sec12, sec13)
 rank = rank_currencies(strength)
@@ -258,88 +192,130 @@ sessIdx = get_session()
 sessStr = calc_session_strength(strength, sessIdx)
 sessRank = rank_currencies(sessStr)
 
-// Pre-declare winner-pair outputs at global scope so both branches can assign to them
-var float buyZone   = float(na)
-var float buyScore  = float(na)
-var float sellZone  = float(na)
-var float sellScore = float(na)
+// ===== BEST PAIR ENGINE =====
+// Strategy: BUY the strongest currency, SELL the weakest. Optional session bias
+// uses the session-weighted rank instead of the all-time rank — e.g. in LON
+// session, EUR/GBP strength matters more than AUD/NZD.
+//
+// Output: bestPair (e.g. "EURJPY LONG"), bestGap (strength[strongest] -
+// strength[weakest]), bestSession ("LON" if biased, else "ALL").
+//
+// If bestGap < minStrengthGap, output empty string + gap 0 — too weak to call.
+var string bestPair    = ""
+var float  bestGap     = 0.0
+var string bestSession = ""
 
-if showWinnerPair
-    [buyZone, buyScore, sellZone, sellScore] = calc_winner_pair(phH, phL, phC)
+if showBestPair
+    useRank = sessionBias ? sessRank : rank
+    strongestIdx = array.get(useRank, 0)
+    weakestIdx   = array.get(useRank, nCcy - 1)
+    longCcy  = array.get(ccy, strongestIdx)
+    shortCcy = array.get(ccy, weakestIdx)
+    gap      = array.get(strength, strongestIdx) - array.get(strength, weakestIdx)
+    if gap >= minStrengthGap and longCcy != shortCcy
+        bestPair    := longCcy + shortCcy + " LONG"
+        bestGap     := gap
+        bestSession := sessionBias ? array.get(sessNames, sessIdx) : "ALL"
+    else
+        bestPair    := ""
+        bestGap     := 0.0
+        bestSession := ""
 else
-    buyZone   := float(na)
-    buyScore  := float(na)
-    sellZone  := float(na)
-    sellScore := float(na)
+    bestPair    := ""
+    bestGap     := 0.0
+    bestSession := ""
 
 // ===== TABLE =====
+// Column design rationale (asked user to justify each header — here's the why):
+//
+//   CCY      — currency code, color-coded so the eye groups rows by asset.
+//   AGG      — aggregate strength (0–100), volume-weighted across all pairs.
+//              Centered at 50 (neutral). >50 = strong, <50 = weak.
+//   MOM      — momentum = EWMA delta. Shows direction of strength change,
+//              not just the level. Green = accelerating, red = fading.
+//   RANK     — ordinal rank, strongest=1. The "leaderboard".
+//   RΔ       — rank change vs previous bar. ▲ green = moved up (got stronger),
+//              ▼ red = moved down. • = unchanged. -1 sentinel on first bar
+//              so we don't show phantom ▼ on cold start.
+//   SESS     — session-weighted strength (current session's bias applied).
+//              Same scale as AGG but tells you "in THIS session, who is hot".
+//   S-RANK   — rank within current session. Often very different from RANK
+//              (e.g., AUD might be #8 overall but #2 in TOK session).
+//   BEST     — recommended pair to trade: LONG strongest / SHORT weakest.
+//              Session-aware if option is on. Empty if gap < min threshold.
+//   GAP      — strength difference (strongest - weakest). The "edge".
+//              >3.0 = high-conviction, <1.0 = choppy/no signal.
+
 var table tbl = na
-var int[] prev_rank = array.new_int(nCcy, 0)
+var int[] prev_rank = array.new_int(nCcy, -1)  // -1 = "never seen" sentinel
 pos = tablePos == "bottom_right" ? position.bottom_right : tablePos == "bottom_left" ? position.bottom_left : tablePos == "top_right" ? position.top_right : position.top_left
 
-colCount = showSessionCol ? 8 : 7
-if showWinnerPair
+colCount = 5
+if showSessionCol
+    colCount := colCount + 2
+if showBestPair
     colCount := colCount + 2
 
 if barstate.islast and showTable
     tbl := table.new(pos, colCount, nCcy + 1, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
 
     col = 0
-    table.cell(tbl, col, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, col, 0, "CCY",   text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
     col := col + 1
-    table.cell(tbl, col, 0, "AGG",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, col, 0, "AGG",   text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
     col := col + 1
-    table.cell(tbl, col, 0, "MOM",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, col, 0, "MOM",   text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
     col := col + 1
-    table.cell(tbl, col, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, col, 0, "RANK",  text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
     col := col + 1
-    table.cell(tbl, col, 0, "RΔ",        text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    table.cell(tbl, col, 0, "RΔ",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
     col := col + 1
     if showSessionCol
-        table.cell(tbl, col, 0, "SESS",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        table.cell(tbl, col, 0, "SESS",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
         col := col + 1
-        table.cell(tbl, col, 0, "S-RANK",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        table.cell(tbl, col, 0, "S-RANK",  text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
         col := col + 1
-    if showWinnerPair
-        table.cell(tbl, col, 0, "BUY_ZONE",  text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    if showBestPair
+        table.cell(tbl, col, 0, "BEST",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
         col := col + 1
-        table.cell(tbl, col, 0, "SELL_ZONE", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        table.cell(tbl, col, 0, "GAP",     text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
         col := col + 1
 
     for row = 0 to nCcy - 1
         idx = array.get(rank, row)
         cur = array.get(ccy, idx)
         cColor = array.get(cols, idx)
-        
+
         fmtStr = "#"
         if decimals > 0
             fmtStr := fmtStr + "."
             for k = 0 to decimals - 1
                 fmtStr := fmtStr + "0"
-        
+
         val = str.tostring(array.get(strength, idx), fmtStr)
         mom = array.get(momentum, idx)
         momFmt = "+#.##;-#.##"
         rnk = str.tostring(row + 1, "#")
-        
+
         currRank = row
         prevRank = array.get(prev_rank, idx)
-        rankChg = currRank - prevRank
+        rankChg = prevRank < 0 ? 0 : currRank - prevRank
         chgArrow = rankChg < 0 ? "▲" : rankChg > 0 ? "▼" : "•"
         chgColor = rankChg < 0 ? color.new(#2e7d32, 0) : rankChg > 0 ? color.new(#c62828, 0) : color.new(#757575, 0)
-        
+
         sessIdx2 = array.indexof(sessRank, idx)
         sessRnk = str.tostring(sessIdx2 + 1, "#")
         sessVal = str.tostring(array.get(sessStr, idx), fmtStr)
         sessColor = sessIdx2 <= 1 ? color.new(#2e7d32, 0) : sessIdx2 <= 3 ? color.new(#f9a825, 0) : color.new(#c62828, 0)
-        
-        showBuy = showWinnerPair and row == 0 and not na(buyZone)
-        showSell = showWinnerPair and row == 0 and not na(sellZone)
-        buyTxt = showBuy ? str.tostring(buyZone, "#.####") + " (" + str.tostring(buyScore, "#.#") + ")" : ""
-        sellTxt = showSell ? str.tostring(sellZone, "#.####") + " (" + str.tostring(sellScore, "#.#") + ")" : ""
-        buyColor = showBuy ? color.new(#2e7d32, 0) : color.black
-        sellColor = showSell ? color.new(#c62828, 0) : color.black
-        
+
+        // BEST PAIR text is only shown on the top (strongest) row, GAP shown there too
+        showBest = showBestPair and row == 0 and bestPair != ""
+        bestTxt = showBest ? bestPair + " (" + bestSession + ")" : ""
+        gapTxt  = showBest ? str.tostring(bestGap, "#.#") : ""
+        // Color the gap green if high-conviction (>3.0), yellow if marginal, gray otherwise
+        gapColor = bestGap > 3.0 ? color.new(#2e7d32, 0) : bestGap > 1.0 ? color.new(#f9a825, 0) : color.new(#757575, 0)
+        bestColor = bestGap > 1.0 ? color.new(#2e7d32, 0) : color.black
+
         array.set(prev_rank, idx, currRank)
 
         col2 = 0
@@ -358,10 +334,10 @@ if barstate.islast and showTable
             col2 := col2 + 1
             table.cell(tbl, col2, row+1, "  " + sessRnk + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
             col2 := col2 + 1
-        if showWinnerPair
-            table.cell(tbl, col2, row+1, "  " + buyTxt + "  ", text_color=buyColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+        if showBestPair
+            table.cell(tbl, col2, row+1, "  " + bestTxt + "  ", text_color=bestColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
             col2 := col2 + 1
-            table.cell(tbl, col2, row+1, "  " + sellTxt + "  ", text_color=sellColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            table.cell(tbl, col2, row+1, "  " + gapTxt + "  ", text_color=gapColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
             col2 := col2 + 1
 
 plot(na)
