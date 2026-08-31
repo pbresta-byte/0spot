@@ -258,12 +258,18 @@ sessIdx = get_session()
 sessStr = calc_session_strength(strength, sessIdx)
 sessRank = rank_currencies(sessStr)
 
+// Pre-declare winner-pair outputs at global scope so both branches can assign to them
+var float buyZone   = float(na)
+var float buyScore  = float(na)
+var float sellZone  = float(na)
+var float sellScore = float(na)
+
 if showWinnerPair
     [buyZone, buyScore, sellZone, sellScore] = calc_winner_pair(phH, phL, phC)
 else
-    buyZone  := float(na)
-    buyScore := float(na)
-    sellZone := float(na)
+    buyZone   := float(na)
+    buyScore  := float(na)
+    sellZone  := float(na)
     sellScore := float(na)
 
 // ===== TABLE =====
@@ -277,29 +283,29 @@ if showWinnerPair
 
 if barstate.islast and showTable
     tbl := table.new(pos, colCount, nCcy + 1, border_width=1, border_color=color.new(color.gray, 40), frame_width=1, frame_color=color.new(color.gray, 60), bgcolor=color.new(#0f0f0f, 95))
-    
-    c = 0
-    table.cell(tbl, c, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    c := c + 1
-    table.cell(tbl, c, 0, "AGG",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    c := c + 1
-    table.cell(tbl, c, 0, "MOM",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    c := c + 1
-    table.cell(tbl, c, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    c := c + 1
-    table.cell(tbl, c, 0, "RΔ",        text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-    c := c + 1
+
+    col = 0
+    table.cell(tbl, col, 0, "CCY",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "AGG",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "MOM",       text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "RANK",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
+    table.cell(tbl, col, 0, "RΔ",        text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+    col := col + 1
     if showSessionCol
-        table.cell(tbl, c, 0, "SESS",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-        c := c + 1
-        table.cell(tbl, c, 0, "S-RANK",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-        c := c + 1
+        table.cell(tbl, col, 0, "SESS",      text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
+        table.cell(tbl, col, 0, "S-RANK",    text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
     if showWinnerPair
-        table.cell(tbl, c, 0, "BUY_ZONE",  text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-        c := c + 1
-        table.cell(tbl, c, 0, "SELL_ZONE", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
-        c := c + 1
-    
+        table.cell(tbl, col, 0, "BUY_ZONE",  text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
+        table.cell(tbl, col, 0, "SELL_ZONE", text_color=color.black, text_size=size.small, bgcolor=color.new(#e0e0e0, 100))
+        col := col + 1
+
     for row = 0 to nCcy - 1
         idx = array.get(rank, row)
         cur = array.get(ccy, idx)
@@ -335,27 +341,27 @@ if barstate.islast and showTable
         sellColor = showSell ? color.new(#c62828, 0) : color.black
         
         array.set(prev_rank, idx, currRank)
-        
-        c = 0
-        table.cell(tbl, c, row+1, "  " + cur + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
-        c := c + 1
-        table.cell(tbl, c, row+1, "  " + val + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
-        c := c + 1
-        table.cell(tbl, c, row+1, "  " + str.tostring(mom, momFmt) + "  ", text_color=mom > 0.2 ? color.new(#2e7d32, 0) : mom < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0), text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-        c := c + 1
-        table.cell(tbl, c, row+1, "  " + rnk + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-        c := c + 1
-        table.cell(tbl, c, row+1, "  " + chgArrow + "  ", text_color=chgColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-        c := c + 1
+
+        col2 = 0
+        table.cell(tbl, col2, row+1, "  " + cur + "  ", text_color=cColor, text_size=size.normal, bgcolor=color.new(#0f0f0f, 95))
+        col2 := col2 + 1
+        table.cell(tbl, col2, row+1, "  " + val + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(cColor, 30))
+        col2 := col2 + 1
+        table.cell(tbl, col2, row+1, "  " + str.tostring(mom, momFmt) + "  ", text_color=mom > 0.2 ? color.new(#2e7d32, 0) : mom < -0.2 ? color.new(#c62828, 0) : color.new(#757575, 0), text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+        col2 := col2 + 1
+        table.cell(tbl, col2, row+1, "  " + rnk + "  ", text_color=color.black, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+        col2 := col2 + 1
+        table.cell(tbl, col2, row+1, "  " + chgArrow + "  ", text_color=chgColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+        col2 := col2 + 1
         if showSessionCol
-            table.cell(tbl, c, row+1, "  " + sessVal + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-            c := c + 1
-            table.cell(tbl, c, row+1, "  " + sessRnk + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-            c := c + 1
+            table.cell(tbl, col2, row+1, "  " + sessVal + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col2 := col2 + 1
+            table.cell(tbl, col2, row+1, "  " + sessRnk + "  ", text_color=sessColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col2 := col2 + 1
         if showWinnerPair
-            table.cell(tbl, c, row+1, "  " + buyTxt + "  ", text_color=buyColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-            c := c + 1
-            table.cell(tbl, c, row+1, "  " + sellTxt + "  ", text_color=sellColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
-            c := c + 1
+            table.cell(tbl, col2, row+1, "  " + buyTxt + "  ", text_color=buyColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col2 := col2 + 1
+            table.cell(tbl, col2, row+1, "  " + sellTxt + "  ", text_color=sellColor, text_size=size.normal, bgcolor=color.new(#f5f5f5, 95))
+            col2 := col2 + 1
 
 plot(na)
