@@ -125,7 +125,9 @@ f_respect(lvl, winBars, minTouches) =>
     weightedTouched < minTouches ? na : 100.0 * weightedHeld / weightedTouched
 
 // ===== MULTI-TIMEFRAME ENGINE =====
-compute_strength(tf) =>
+// NOTE: request.security() MUST be at global scope. We hoist 14 calls (one per
+// top BIS pair) to global scope below, then pass them in as r0..r13.
+compute_strength(r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13) =>
     var float[] acc  = array.new_float(nCcy, 0.0)
     var int[]   cnt  = array.new_int(nCcy, 0)
     var float[] str  = array.new_float(nCcy, 50.0)
@@ -136,28 +138,7 @@ compute_strength(tf) =>
         array.set(acc, i, 0.0)
         array.set(cnt, i, 0)
     
-    // Request ROC for all 68 pairs at global scope (limit 40 per TF, so we batch)
-    // We'll use 20 pairs per call, 4 calls = 80 > 40 limit. Use 10 pairs per TF * 3 TFs = 30
-    // Actually: 40 security calls max. We have 68 pairs. Need to be careful.
-    // Strategy: use top 20 BIS pairs for 3 TFs = 60 calls... too many.
-    // Better: use 13 pairs per TF * 3 = 39 calls (under 40)
-    
-    r0  = request.security("OANDA:" + array.get(pairs, 0),  tf, ta.roc(close, 14))
-    r1  = request.security("OANDA:" + array.get(pairs, 1),  tf, ta.roc(close, 14))
-    r2  = request.security("OANDA:" + array.get(pairs, 2),  tf, ta.roc(close, 14))
-    r3  = request.security("OANDA:" + array.get(pairs, 3),  tf, ta.roc(close, 14))
-    r4  = request.security("OANDA:" + array.get(pairs, 4),  tf, ta.roc(close, 14))
-    r5  = request.security("OANDA:" + array.get(pairs, 5),  tf, ta.roc(close, 14))
-    r6  = request.security("OANDA:" + array.get(pairs, 6),  tf, ta.roc(close, 14))
-    r7  = request.security("OANDA:" + array.get(pairs, 7),  tf, ta.roc(close, 14))
-    r8  = request.security("OANDA:" + array.get(pairs, 8),  tf, ta.roc(close, 14))
-    r9  = request.security("OANDA:" + array.get(pairs, 9),  tf, ta.roc(close, 14))
-    r10 = request.security("OANDA:" + array.get(pairs, 10), tf, ta.roc(close, 14))
-    r11 = request.security("OANDA:" + array.get(pairs, 11), tf, ta.roc(close, 14))
-    r12 = request.security("OANDA:" + array.get(pairs, 12), tf, ta.roc(close, 14))
-    r13 = request.security("OANDA:" + array.get(pairs, 13), tf, ta.roc(close, 14))
-    
-    rArr = array.from(r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13)
+    rArr = array.from(r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13)
     
     for i = 0 to 13
         w = array.get(volWt, array.indexof(ccy, array.get(pairBase, i)))
@@ -219,10 +200,7 @@ calc_session_strength(str_arr, sess_idx) =>
     adj
 
 // ===== WINNER PAIR (Pivot Hot Zone) =====
-calc_winner_pair() =>
-    hH = request.security(syminfo.tickerid, pivotTF, high[1])
-    hL = request.security(syminfo.tickerid, pivotTF, low[1])
-    hC = request.security(syminfo.tickerid, pivotTF, close[1])
+calc_winner_pair(hH, hL, hC) =>
     [hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3] = f_pivots(hH, hL, hC)
     hLv = array.from(hS3, hM0, hS2, hM1, hS1, hM2, hPP, hM3, hR1, hM4, hR2, hM5, hR3)
     
@@ -249,8 +227,30 @@ calc_winner_pair() =>
     
     [bestBuy, bestBuyS, bestSell, bestSellS]
 
+// ===== GLOBAL SCOPE: request.security() calls (must NOT be inside functions) =====
+// 14 top BIS pairs at D timeframe (under 40-call limit)
+sec0  = request.security("OANDA:" + array.get(pairs, 0),  "D", ta.roc(close, 14))
+sec1  = request.security("OANDA:" + array.get(pairs, 1),  "D", ta.roc(close, 14))
+sec2  = request.security("OANDA:" + array.get(pairs, 2),  "D", ta.roc(close, 14))
+sec3  = request.security("OANDA:" + array.get(pairs, 3),  "D", ta.roc(close, 14))
+sec4  = request.security("OANDA:" + array.get(pairs, 4),  "D", ta.roc(close, 14))
+sec5  = request.security("OANDA:" + array.get(pairs, 5),  "D", ta.roc(close, 14))
+sec6  = request.security("OANDA:" + array.get(pairs, 6),  "D", ta.roc(close, 14))
+sec7  = request.security("OANDA:" + array.get(pairs, 7),  "D", ta.roc(close, 14))
+sec8  = request.security("OANDA:" + array.get(pairs, 8),  "D", ta.roc(close, 14))
+sec9  = request.security("OANDA:" + array.get(pairs, 9),  "D", ta.roc(close, 14))
+sec10 = request.security("OANDA:" + array.get(pairs, 10), "D", ta.roc(close, 14))
+sec11 = request.security("OANDA:" + array.get(pairs, 11), "D", ta.roc(close, 14))
+sec12 = request.security("OANDA:" + array.get(pairs, 12), "D", ta.roc(close, 14))
+sec13 = request.security("OANDA:" + array.get(pairs, 13), "D", ta.roc(close, 14))
+
+// Pivot Hot Zone prev-bar OHLC at user-selected TF (3 calls)
+phH = request.security(syminfo.tickerid, pivotTF, high[1])
+phL = request.security(syminfo.tickerid, pivotTF, low[1])
+phC = request.security(syminfo.tickerid, pivotTF, close[1])
+
 // ===== COMPUTE =====
-[strength, momentum] = compute_strength("D")
+[strength, momentum] = compute_strength(sec0, sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9, sec10, sec11, sec12, sec13)
 rank = rank_currencies(strength)
 aggScore = calc_aggregate(strength)
 
@@ -259,7 +259,7 @@ sessStr = calc_session_strength(strength, sessIdx)
 sessRank = rank_currencies(sessStr)
 
 if showWinnerPair
-    [buyZone, buyScore, sellZone, sellScore] = calc_winner_pair()
+    [buyZone, buyScore, sellZone, sellScore] = calc_winner_pair(phH, phL, phC)
 else
     buyZone  := float(na)
     buyScore := float(na)
