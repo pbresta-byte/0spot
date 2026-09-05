@@ -296,18 +296,23 @@ if barstate.islast
         rankPrev = array.get(prevRank, c)
         // rank-change arrow: rank improved (lower number) = ▲ strengthening (green)
         //                   rank worsened (higher number) = ▼ weakness (red)
+        // defaults: rankPrev == -1 means "first time we see this row" -> neutral
+        // (hoisted above the if-chain so line 315 can see them; previously
+        //  they were assigned inside each branch and were out of scope below)
+        arrow = "-"
+        arrowCol = color.white
         if rankPrev == -1
-            arrow = "-"
-            arrowCol = color.white
+            // keep neutral defaults
+            na
         else if rankNow < rankPrev
-            arrow = "▲"
-            arrowCol = color.green
+            arrow := "▲"
+            arrowCol := color.green
         else if rankNow > rankPrev
-            arrow = "▼"
-            arrowCol = color.red
+            arrow := "▼"
+            arrowCol := color.red
         else
-            arrow = "▬"
-            arrowCol = #888888
+            arrow := "▬"
+            arrowCol := #888888
         // rank number on the side — black text
         table.cell(stbl, 0, r + 1, str.tostring(rankNow), text_color = color.black, bgcolor = #1e1e1e)
         table.cell(stbl, 1, r + 1, name, text_color = col, bgcolor = #1e1e1e)
